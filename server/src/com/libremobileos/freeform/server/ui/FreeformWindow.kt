@@ -374,7 +374,6 @@ class FreeformWindow(
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                     WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-            renderingHints = renderingHints or WindowManager.LayoutParams.RENDERING_HINT_FORCE_HARDWARE_ACCELERATED
             format = PixelFormat.RGBA_8888
             windowAnimations = android.R.style.Animation_Dialog
         }
