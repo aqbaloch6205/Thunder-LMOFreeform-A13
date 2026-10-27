@@ -20,8 +20,7 @@ object LMOFreeformBoot {
         started = true
         try {
             // UI-capable context: needed for windowManager.addView() and Context.getDisplay()
-            val ctx = runCatching { ActivityThread.currentActivityThread()?.systemUiContext }
-                .getOrNull() ?: systemContext
+            val ctx = systemUiContext() ?: systemContext
             val handler = Handler(Looper.getMainLooper())
 
             SystemServiceHolder.init()
@@ -32,4 +31,11 @@ object LMOFreeformBoot {
             Slog.e(TAG, "LMOFreeform failed to start", t)
         }
     }
+
+    // ActivityThread.getSystemUiContext() returns the package-private ContextImpl;
+    // call it via reflection so our dex never references that class directly.
+    private fun systemUiContext(): Context? = runCatching {
+        val at = ActivityThread.currentActivityThread()
+        ActivityThread::class.java.getMethod("getSystemUiContext").invoke(at) as? Context
+    }.getOrNull()
 }
