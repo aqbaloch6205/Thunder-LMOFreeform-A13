@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resource-only package: its layouts/drawables are loaded by the freeform
+     server that lives inside system_server (RemoteResourceHolder). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.libremobileos.freeform"
+    android:versionCode="3006"
+    android:versionName="3.0.6-A13">
+
+    <!-- who may send START_FREEFORM / STOP_FREEFORM broadcasts (root always can) -->
+    <permission
+        android:name="com.libremobileos.permission.START_FREEFORM"
+        android:protectionLevel="signature|privileged" />
+
+    <application
+        android:label="@string/app_name"
+        android:hasCode="false" />
+</manifest>
