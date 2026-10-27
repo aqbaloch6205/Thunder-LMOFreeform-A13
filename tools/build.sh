@@ -45,15 +45,34 @@ ls "$WORK/dex"
 cp "$WORK/dex/classes.dex" "$OUT/classes-lmofreeform.dex"
 [ -f "$WORK/dex/classes2.dex" ] && cp "$WORK/dex/classes2.dex" "$OUT/classes-lmofreeform2.dex" || true
 
-# 5) resource-only APK
+# 5) signing key (same key for both apks)
+keytool -genkeypair -keystore "$WORK/ks.jks" -storepass lmofreeform -keypass lmofreeform \
+  -alias k -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=LMOFreeform" >/dev/null 2>&1
+sign() { # in out
+  "$BT/zipalign" -f -p 4 "$1" "$WORK/_aligned.apk"
+  "$BT/apksigner" sign --ks "$WORK/ks.jks" --ks-pass pass:lmofreeform --key-pass pass:lmofreeform \
+    --out "$2" "$WORK/_aligned.apk"
+}
+
+# 6) resource-only APK (LMOFreeform.apk)
 "$BT/aapt2" compile --dir "$ROOT/apk/res" -o "$WORK/res.zip"
 "$BT/aapt2" link -o "$WORK/unsigned.apk" -I "$PLATFORM_JAR" \
   --manifest "$ROOT/apk/AndroidManifest.xml" \
   --min-sdk-version 33 --target-sdk-version 33 "$WORK/res.zip"
-"$BT/zipalign" -f -p 4 "$WORK/unsigned.apk" "$WORK/aligned.apk"
-keytool -genkeypair -keystore "$WORK/ks.jks" -storepass lmofreeform -keypass lmofreeform \
-  -alias k -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=LMOFreeform" >/dev/null 2>&1
-"$BT/apksigner" sign --ks "$WORK/ks.jks" --ks-pass pass:lmofreeform --key-pass pass:lmofreeform \
-  --out "$OUT/LMOFreeform.apk" "$WORK/aligned.apk"
+sign "$WORK/unsigned.apk" "$OUT/LMOFreeform.apk"
+
+# 7) launcher app (FreeformLauncher.apk): plain Java, public SDK only
+"$BT/aapt2" compile --dir "$ROOT/launcher/res" -o "$WORK/lres.zip"
+"$BT/aapt2" link -o "$WORK/lunsigned.apk" -I "$PLATFORM_JAR" \
+  --manifest "$ROOT/launcher/AndroidManifest.xml" \
+  --min-sdk-version 33 --target-sdk-version 33 \
+  --java "$WORK/lgen" "$WORK/lres.zip"
+mkdir -p "$WORK/lclasses" "$WORK/ldex"
+javac --release 17 -cp "$PLATFORM_JAR" -d "$WORK/lclasses" \
+  $(find "$ROOT/launcher/src" "$WORK/lgen" -name '*.java')
+"$BT/d8" --release --min-api 33 --lib "$PLATFORM_JAR" --output "$WORK/ldex" \
+  $(find "$WORK/lclasses" -name '*.class')
+( cd "$WORK/ldex" && zip -q "$WORK/lunsigned.apk" classes.dex )
+sign "$WORK/lunsigned.apk" "$OUT/FreeformLauncher.apk"
 
 ls -la "$OUT"

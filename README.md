@@ -18,6 +18,11 @@ Agar hidden-API jar download fail ho to `libs/android-hidden.jar` (android 33, h
 ## 3. APK
 `LMOFreeform.apk` -> `/system/priv-app/LMOFreeform/LMOFreeform.apk`, permission 644. Sirf resources hain (code nahi).
 
+## 3b. Launcher app
+`FreeformLauncher.apk` -> `/system/app/FreeformLauncher/FreeformLauncher.apk` (644). Reboot ke baad "Freeform" icon aayega:
+app par tap = floating window, "Size" button = width/height/dpi sliders.
+(LMOFreeform.apk pehle install honi chahiye, taake permission declare ho.)
+
 ## 4. Test (root)
     su -c 'am broadcast --user 0 -a com.libremobileos.freeform.START_FREEFORM --es packageName com.whatsapp'
 Log: `logcat | grep LMOFreeform`. Debug logs: `setprop log.tag.LMOFreeform DEBUG`.
