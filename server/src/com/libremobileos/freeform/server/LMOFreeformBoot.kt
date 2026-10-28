@@ -25,7 +25,13 @@ object LMOFreeformBoot {
 
             SystemServiceHolder.init()
             LMOFreeformServiceHolder.init(LMOFreeformService(ctx, handler))
-            LMOFreeformController(ctx, handler).register()
+            val controller = LMOFreeformController(ctx, handler)
+            controller.register()
+            val sidebar = com.libremobileos.freeform.server.sidebar.SidebarController(ctx, handler) { pkg, act ->
+                controller.start(pkg, act)
+            }
+            LMOFreeformApi.sidebar = sidebar
+            sidebar.start()
             Slog.i(TAG, "LMOFreeform (A13 port) started")
         } catch (t: Throwable) {
             Slog.e(TAG, "LMOFreeform failed to start", t)

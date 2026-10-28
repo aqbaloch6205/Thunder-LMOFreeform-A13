@@ -62,6 +62,13 @@ class FreeformWindow(
     private val defaultDisplayInfo = DisplayInfo()
     private val destroyRunnable = Runnable { destroy("destroyRunnable", true) }
     
+    private val profile = AppProfiles.get(context, appConfig.packageName)
+    private val declaredLandscape: Boolean? =
+        if (appConfig.userId == -100) null
+        else AppProfiles.declaredLandscape(context, appConfig.packageName, appConfig.activityName)
+    /** set when the running app asks for an orientation (see FreeformTaskStackListener) */
+    private var requestedLandscape: Boolean? = null
+
     private var appPackageName: String = ""
     private var appIcon: Drawable? = null
     private var isInitialized = false
@@ -69,27 +76,53 @@ class FreeformWindow(
     private val rotationWatcher = object : IRotationWatcher.Stub() {
         override fun onRotationChanged(rotation: Int) {
             dlog(TAG, "onRotationChanged($rotation)")
-            defaultDisplayWidth = context.resources.displayMetrics.widthPixels
-            defaultDisplayHeight = context.resources.displayMetrics.heightPixels
-            defaultDisplayRotation = context.display.rotation
-            measureSize()
             handler.post {
-                changeOrientation()
-                if (freeformConfig.isHangUp) toHangUp()
-                else makeSureFreeformInScreen()
+                defaultDisplayWidth = context.resources.displayMetrics.widthPixels
+                defaultDisplayHeight = context.resources.displayMetrics.heightPixels
+                defaultDisplayRotation = context.display.rotation
+                reflow()
             }
-            measureScale()
-            LMOFreeformServiceHolder.resizeFreeform(
-                this@FreeformWindow,
-                freeformConfig.freeformWidth,
-                freeformConfig.freeformHeight,
-                freeformConfig.densityDpi
-            )
-            freeformView?.surfaceTexture?.setDefaultBufferSize(
-                freeformConfig.freeformWidth,
-                freeformConfig.freeformHeight
-            )
         }
+    }
+
+    /** Re-measure window + virtual display after rotation / orientation change. Handler thread. */
+    private fun reflow() {
+        measureSize()
+        measureScale()
+        changeOrientation()
+        if (freeformConfig.isHangUp) toHangUp() else makeSureFreeformInScreen()
+        LMOFreeformServiceHolder.resizeFreeform(
+            this,
+            freeformConfig.freeformWidth,
+            freeformConfig.freeformHeight,
+            freeformConfig.densityDpi
+        )
+        freeformView?.surfaceTexture?.setDefaultBufferSize(
+            freeformConfig.freeformWidth,
+            freeformConfig.freeformHeight
+        )
+    }
+
+    /** The running app asked for landscape/portrait: reshape the window (unless the user forced one). */
+    fun onAppRequestedOrientation(landscape: Boolean) {
+        if (profile.orientation != AppProfiles.AUTO) return
+        handler.post {
+            if (requestedLandscape == landscape) return@post
+            requestedLandscape = landscape
+            dlog(TAG, "app requested landscape=$landscape")
+            reflow()
+        }
+    }
+
+    private val deviceLandscape: Boolean
+        get() = defaultDisplayRotation == Surface.ROTATION_90 ||
+                defaultDisplayRotation == Surface.ROTATION_270
+
+    /** Should the floating window be landscape-shaped? profile > running app > manifest > device. */
+    private fun isLandscapeWindow(): Boolean = when (profile.orientation) {
+        AppProfiles.LANDSCAPE -> true
+        AppProfiles.PORTRAIT -> false
+        else -> requestedLandscape ?: declaredLandscape ?: deviceLandscape
     }
 
     companion object {
@@ -245,26 +278,45 @@ class FreeformWindow(
             } else {
                 defaultDisplayInfo.presentationDeadlineNanos
             }
+            if (profile.dpi in 120..800) densityDpi = profile.dpi
             dlog(TAG, "populateFreeformConfig: $this")
         }
     }
 
+    /**
+     * Smart window size. S = short screen side, L = long side.
+     *  - portrait-shaped window: width/height are fractions of the screen (global or per-app %)
+     *  - landscape-shaped window (landscape games, videos): fixed 16:9, as wide as fits
+     */
     fun measureSize() {
-        val isPortrait = defaultDisplayRotation == Surface.ROTATION_0 ||
-                defaultDisplayRotation == Surface.ROTATION_180
-        val wFrac = FreeformSettings.fraction(context, FreeformSettings.KEY_WIDTH_PCT, FreeformSettings.DEF_WIDTH_PCT)
-        val hFrac = FreeformSettings.fraction(context, FreeformSettings.KEY_HEIGHT_PCT, FreeformSettings.DEF_HEIGHT_PCT)
-        val lhFrac = FreeformSettings.fraction(context, FreeformSettings.KEY_LANDSCAPE_HEIGHT_PCT, FreeformSettings.DEF_LANDSCAPE_HEIGHT_PCT)
+        val s = min(defaultDisplayWidth, defaultDisplayHeight).toFloat()
+        val l = max(defaultDisplayWidth, defaultDisplayHeight).toFloat()
+        val devLand = deviceLandscape
+        val landscape = isLandscapeWindow()
+        val wFrac = if (profile.widthPct > 0) profile.widthPct.coerceIn(30, 100) / 100f
+            else FreeformSettings.fraction(context, FreeformSettings.KEY_WIDTH_PCT, FreeformSettings.DEF_WIDTH_PCT)
+        val hFrac = if (profile.heightPct > 0) profile.heightPct.coerceIn(30, 100) / 100f
+            else FreeformSettings.fraction(context, FreeformSettings.KEY_HEIGHT_PCT, FreeformSettings.DEF_HEIGHT_PCT)
+        val lhFrac = if (profile.heightPct > 0) profile.heightPct.coerceIn(30, 100) / 100f
+            else FreeformSettings.fraction(context, FreeformSettings.KEY_LANDSCAPE_HEIGHT_PCT, FreeformSettings.DEF_LANDSCAPE_HEIGHT_PCT)
         freeformConfig.apply {
-            height = (defaultDisplayHeight * (if (isPortrait) hFrac else lhFrac)).roundToInt()
-            width = if (isPortrait) {
-                (defaultDisplayWidth * wFrac).roundToInt()
+            if (landscape) {
+                // 16:9 window; on a portrait device it uses the full width, on a landscape device 60% of it
+                val w = if (devLand) l * (if (profile.widthPct > 0) wFrac else 0.6f)
+                        else s * (if (profile.widthPct > 0) wFrac else 0.96f)
+                var h = w * 9f / 16f
+                if (h > s * 0.9f) h = s * 0.9f
+                width = w.roundToInt()
+                height = h.roundToInt()
+            } else if (!devLand) {
+                width = (s * wFrac).roundToInt()
+                height = (l * hFrac).roundToInt()
             } else {
-                // Landscape: phone-portrait aspect at full height, widened 1.6x
-                val baseWidth = defaultDisplayHeight.toFloat() * defaultDisplayHeight / defaultDisplayWidth
-                (baseWidth * 1.6f).roundToInt().coerceAtMost((defaultDisplayWidth * 0.9f).roundToInt())
+                // portrait-shaped window on a landscape device: tall, phone-like proportions
+                height = (s * lhFrac).roundToInt()
+                width = (height * 0.62f).roundToInt()
             }
-            dlog(TAG, "measureSize: isPortrait=$isPortrait width=$width height=$height")
+            dlog(TAG, "measureSize: landscapeWindow=$landscape devLand=$devLand width=$width height=$height")
         }
     }
 

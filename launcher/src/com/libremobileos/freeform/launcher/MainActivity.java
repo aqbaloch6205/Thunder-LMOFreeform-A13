@@ -3,48 +3,25 @@ package com.libremobileos.freeform.launcher;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
-import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.os.Process;
 import android.provider.Settings;
-import android.text.Editable;
-import android.text.TextWatcher;
-import android.view.Gravity;
-import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
-import android.widget.BaseAdapter;
 import android.widget.Button;
-import android.widget.EditText;
-import android.widget.GridView;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
+import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
-
-/** Picks an app and asks the freeform server (inside system_server) to open it in a floating window. */
+/** Settings: sidebar on/off, look & feel, pinned apps, floating window size. */
 public class MainActivity extends Activity {
-    private static final String ACTION_START = "com.libremobileos.freeform.START_FREEFORM";
     private static final String ACTION_SET_CONFIG = "com.libremobileos.freeform.SET_CONFIG";
     private static final String KEY_WIDTH = "lmo_freeform_width_pct";
     private static final String KEY_HEIGHT = "lmo_freeform_height_pct";
     private static final String KEY_DPI = "lmo_freeform_dpi";
-
-    private static class Item {
-        String label, pkg, activity;
-        Drawable icon;
-    }
-
-    private final List<Item> all = new ArrayList<>();
-    private final List<Item> shown = new ArrayList<>();
-    private BaseAdapter adapter;
 
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
@@ -54,93 +31,73 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(12), dp(24), dp(12), 0);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(32), dp(20), dp(24));
 
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        EditText search = new EditText(this);
-        search.setHint("Search apps");
-        search.setSingleLine(true);
-        top.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        Button settings = new Button(this);
-        settings.setText("Size");
-        settings.setOnClickListener(v -> showSizeDialog());
-        top.addView(settings, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(top);
+        TextView title = new TextView(this);
+        title.setTextSize(22);
+        title.setText("Freeform settings");
+        box.addView(title);
 
-        GridView grid = new GridView(this);
-        grid.setNumColumns(4);
-        grid.setVerticalSpacing(dp(8));
-        grid.setClipToPadding(false);
-        adapter = new AppAdapter();
-        grid.setAdapter(adapter);
-        grid.setOnItemClickListener((AdapterView<?> parent, View view, int position, long id) -> {
-            Item it = shown.get(position);
-            start(it);
-        });
-        root.addView(grid, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        setContentView(root);
+        TextView hint = new TextView(this);
+        hint.setText("Sidebar runs inside the system. Open/close it with the edge handle, "
+                + "or bind a key to LMOFreeformApi.toggleSidebar().");
+        hint.setPadding(0, dp(8), 0, 0);
+        box.addView(hint);
 
-        search.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(Editable s) { filter(s.toString()); }
-        });
+        Switch enable = new Switch(this);
+        enable.setText("Enable sidebar");
+        enable.setPadding(0, dp(16), 0, dp(8));
+        enable.setChecked(Prefs.getInt(this, Prefs.ENABLED, 1) == 1);
+        enable.setOnCheckedChangeListener((b, on) -> Prefs.putInt(this, Prefs.ENABLED, on ? 1 : 0));
+        box.addView(enable);
 
-        new Thread(this::loadApps).start();
+        RadioGroup side = new RadioGroup(this);
+        side.setOrientation(RadioGroup.HORIZONTAL);
+        RadioButton l = new RadioButton(this); l.setText("Left"); l.setId(100);
+        RadioButton r = new RadioButton(this); r.setText("Right"); r.setId(101);
+        side.addView(l);
+        side.addView(r);
+        side.check(Prefs.getInt(this, Prefs.SIDE, 1) == 1 ? 101 : 100);
+        side.setOnCheckedChangeListener((g, id) -> Prefs.putInt(this, Prefs.SIDE, id == 101 ? 1 : 0));
+        box.addView(side);
+
+        slider(box, "Handle length (dp)", Prefs.HANDLE_LEN, 40, 300, 100);
+        slider(box, "Handle width (dp)", Prefs.HANDLE_WIDTH, 3, 16, 6);
+        slider(box, "Handle opacity (%)", Prefs.HANDLE_ALPHA, 20, 100, 70);
+        slider(box, "Columns", Prefs.COLUMNS, 1, 5, 1);
+        slider(box, "Icon size (dp)", Prefs.ICON_SIZE, 32, 72, 40);
+        slider(box, "Panel opacity (%)", Prefs.PANEL_ALPHA, 40, 100, 85);
+
+        box.addView(button("Choose sidebar apps", () ->
+                startActivity(new Intent(this, AppPickerActivity.class)
+                        .putExtra(AppPickerActivity.EXTRA_PIN, true))));
+        box.addView(button("Default window size", this::showSizeDialog));
+        box.addView(button("Open an app (long-press = per-app window settings)", () ->
+                startActivity(new Intent(this, AppPickerActivity.class))));
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        setContentView(sv);
     }
 
-    private void loadApps() {
-        PackageManager pm = getPackageManager();
-        Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
-        List<Item> list = new ArrayList<>();
-        for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
-            if (getPackageName().equals(ri.activityInfo.packageName)) continue;
-            Item it = new Item();
-            it.label = String.valueOf(ri.loadLabel(pm));
-            it.pkg = ri.activityInfo.packageName;
-            it.activity = ri.activityInfo.name;
-            it.icon = ri.loadIcon(pm);
-            list.add(it);
-        }
-        Collections.sort(list, (a, b) -> a.label.compareToIgnoreCase(b.label));
-        runOnUiThread(() -> {
-            all.clear();
-            all.addAll(list);
-            filter("");
-        });
-    }
-
-    private void filter(String text) {
-        String t = text.trim().toLowerCase(Locale.ROOT);
-        shown.clear();
-        for (Item it : all) {
-            if (t.isEmpty() || it.label.toLowerCase(Locale.ROOT).contains(t)) shown.add(it);
-        }
-        adapter.notifyDataSetChanged();
-    }
-
-    private void start(Item it) {
-        Intent i = new Intent(ACTION_START);
-        i.putExtra("packageName", it.pkg);
-        i.putExtra("activityName", it.activity);
-        i.putExtra("userId", Process.myUid() / 100000);
-        sendBroadcast(i);
-        finish();
-    }
-
-    private int getSetting(String key, int def) {
-        return Settings.System.getInt(getContentResolver(), key, def);
+    private Button button(String text, Runnable r) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setOnClickListener(v -> r.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(12);
+        b.setLayoutParams(lp);
+        return b;
     }
 
     private SeekBar addSlider(LinearLayout box, String title, int min, int max, int value) {
         TextView label = new TextView(this);
         label.setText(title + ": " + value);
+        label.setPadding(0, dp(12), 0, 0);
         box.addView(label);
         SeekBar bar = new SeekBar(this);
         bar.setMax(max - min);
@@ -156,14 +113,30 @@ public class MainActivity extends Activity {
         return bar;
     }
 
+    private void slider(LinearLayout box, String title, String key, int min, int max, int def) {
+        SeekBar bar = addSlider(box, title, min, max, Prefs.getInt(this, key, def));
+        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar s, int p, boolean u) {
+                ((TextView) box.getChildAt(box.indexOfChild(s) - 1)).setText(title + ": " + (p + min));
+            }
+            @Override public void onStartTrackingTouch(SeekBar s) {}
+            @Override public void onStopTrackingTouch(SeekBar s) {
+                Prefs.putInt(MainActivity.this, key, s.getProgress() + min);
+            }
+        });
+    }
+
+    private int getSetting(String key, int def) {
+        return Prefs.getInt(this, key, def);
+    }
+
     private void showSizeDialog() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(12), dp(20), 0);
         SeekBar w = addSlider(box, "Width % (portrait)", 30, 100, getSetting(KEY_WIDTH, 90));
         SeekBar h = addSlider(box, "Height % (portrait)", 30, 100, getSetting(KEY_HEIGHT, 62));
-        int curDpi = getSetting(KEY_DPI, 0);
-        SeekBar d = addSlider(box, "DPI (0 = auto, 120-800)", 0, 800, curDpi);
+        SeekBar d = addSlider(box, "DPI (0 = auto, 120-800)", 0, 800, getSetting(KEY_DPI, 0));
         new AlertDialog.Builder(this)
                 .setTitle("Floating window size")
                 .setView(box)
@@ -178,41 +151,5 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
-    }
-
-    private class AppAdapter extends BaseAdapter {
-        @Override public int getCount() { return shown.size(); }
-        @Override public Object getItem(int p) { return shown.get(p); }
-        @Override public long getItemId(int p) { return p; }
-
-        @Override
-        public View getView(int position, View convertView, ViewGroup parent) {
-            LinearLayout cell;
-            ImageView icon;
-            TextView name;
-            if (convertView == null) {
-                cell = new LinearLayout(MainActivity.this);
-                cell.setOrientation(LinearLayout.VERTICAL);
-                cell.setGravity(Gravity.CENTER_HORIZONTAL);
-                cell.setPadding(dp(2), dp(4), dp(2), dp(4));
-                icon = new ImageView(MainActivity.this);
-                cell.addView(icon, new LinearLayout.LayoutParams(dp(48), dp(48)));
-                name = new TextView(MainActivity.this);
-                name.setTextSize(11);
-                name.setGravity(Gravity.CENTER);
-                name.setMaxLines(2);
-                name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                cell.addView(name, new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                cell.setTag(new Object[] { icon, name });
-            } else {
-                cell = (LinearLayout) convertView;
-            }
-            Object[] holder = (Object[]) cell.getTag();
-            Item it = shown.get(position);
-            ((ImageView) holder[0]).setImageDrawable(it.icon);
-            ((TextView) holder[1]).setText(it.label);
-            return cell;
-        }
     }
 }

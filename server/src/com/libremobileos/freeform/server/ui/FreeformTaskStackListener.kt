@@ -4,8 +4,6 @@ import android.app.ActivityManager
 import android.app.TaskStackListener
 import android.view.Display
 import com.libremobileos.freeform.server.Debug.dlog
-import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Extends the framework's no-op TaskStackListener adapter so we only override
@@ -22,9 +20,6 @@ class FreeformTaskStackListener(
     companion object {
         private const val TAG = "LMOFreeform/FreeformTaskStackListener"
 
-        const val PORTRAIT = 1
-        const val LANDSCAPE_1 = 0
-        const val LANDSCAPE_2 = 6
     }
 
     override fun onTaskRemoved(taskId: Int) {
@@ -53,26 +48,8 @@ class FreeformTaskStackListener(
     override fun onActivityRequestedOrientationChanged(taskId: Int, requestedOrientation: Int) {
         if (taskId != this.taskId) return
         dlog(TAG, "onActivityRequestedOrientationChanged: $requestedOrientation")
-        val cfg = window.freeformConfig
-        val maxSide = max(cfg.width, cfg.height)
-        val minSide = min(cfg.width, cfg.height)
-        val maxHangUp = max(cfg.hangUpWidth, cfg.hangUpHeight)
-        val minHangUp = min(cfg.hangUpWidth, cfg.hangUpHeight)
-        when (requestedOrientation) {
-            PORTRAIT -> {
-                cfg.width = minSide
-                cfg.height = maxSide
-                cfg.hangUpWidth = minHangUp
-                cfg.hangUpHeight = maxHangUp
-            }
-            LANDSCAPE_1, LANDSCAPE_2 -> {
-                cfg.width = maxSide
-                cfg.height = minSide
-                cfg.hangUpWidth = maxHangUp
-                cfg.hangUpHeight = minHangUp
-            }
-        }
-        window.handler.post { window.changeOrientation() }
+        AppProfiles.landscapeFromOrientation(requestedOrientation)
+            ?.let { window.onAppRequestedOrientation(it) }
     }
 
     override fun onTaskRemovalStarted(taskInfo: ActivityManager.RunningTaskInfo?) {

@@ -31,6 +31,9 @@ class LMOFreeformController(private val context: Context, private val handler: H
                     ACTION_STOP -> intent.getStringExtra("freeformId")
                         ?.let { FreeformWindowManager.removeWindow(it, true) }
                     ACTION_SET_CONFIG -> handleSetConfig(intent)
+                    ACTION_TOGGLE_SIDEBAR -> LMOFreeformApi.toggleSidebar()
+                    ACTION_OPEN_SIDEBAR -> LMOFreeformApi.openSidebar()
+                    ACTION_CLOSE_SIDEBAR -> LMOFreeformApi.closeSidebar()
                 }
             } catch (t: Throwable) {
                 Slog.e(TAG, "handling ${intent.action} failed", t)
@@ -43,6 +46,9 @@ class LMOFreeformController(private val context: Context, private val handler: H
             addAction(ACTION_START)
             addAction(ACTION_STOP)
             addAction(ACTION_SET_CONFIG)
+            addAction(ACTION_TOGGLE_SIDEBAR)
+            addAction(ACTION_OPEN_SIDEBAR)
+            addAction(ACTION_CLOSE_SIDEBAR)
         }
         context.registerReceiverForAllUsers(receiver, filter, PERMISSION_START, handler)
         Slog.i(TAG, "listening for $ACTION_START (permission $PERMISSION_START)")
@@ -62,24 +68,32 @@ class LMOFreeformController(private val context: Context, private val handler: H
         }
 
         val pkg = intent.getStringExtra("packageName") ?: return
-        val activity = intent.getStringExtra("activityName") ?: resolveLauncherActivity(pkg, userId)
+        start(pkg, intent.getStringExtra("activityName"), userId, taskId)
+    }
+
+    /** Open [pkg] in a floating window (activityName = null -> launcher activity). */
+    fun start(pkg: String, activityName: String?, userId: Int = UserHandle.USER_SYSTEM, taskId: Int = -1) {
+        val dpi = FreeformSettings.dpi(context, context.resources.displayMetrics.densityDpi)
+        val activity = activityName ?: resolveLauncherActivity(pkg, userId)
         if (activity == null) {
             Slog.e(TAG, "no launcher activity for $pkg")
             return
         }
-        // width/height are computed by FreeformWindow.measureSize(); only dpi matters here
         FreeformWindowManager.addWindow(handler, context, pkg, activity, userId, taskId, null, 0, 0, dpi)
     }
 
-    /** Writes size/dpi tunables to Settings.System (we run as uid 1000, so this is allowed). */
+    /** Writes every lmo_* extra (Int / Boolean / String) to Settings.System (we are uid 1000). */
     private fun handleSetConfig(intent: Intent) {
-        for (key in listOf(FreeformSettings.KEY_WIDTH_PCT, FreeformSettings.KEY_HEIGHT_PCT,
-                FreeformSettings.KEY_LANDSCAPE_HEIGHT_PCT, FreeformSettings.KEY_DPI)) {
-            if (intent.hasExtra(key)) {
-                Settings.System.putInt(context.contentResolver, key, intent.getIntExtra(key, 0))
+        val extras = intent.extras ?: return
+        for (key in extras.keySet()) {
+            if (!key.startsWith("lmo_")) continue
+            when (val v = extras.get(key)) {
+                is Int -> Settings.System.putInt(context.contentResolver, key, v)
+                is Boolean -> Settings.System.putInt(context.contentResolver, key, if (v) 1 else 0)
+                is String -> Settings.System.putString(context.contentResolver, key, v)
             }
         }
-        Slog.i(TAG, "config updated: ${intent.extras}")
+        Slog.i(TAG, "config updated: $extras")
     }
 
     private fun resolveLauncherActivity(pkg: String, userId: Int): String? {
@@ -93,6 +107,9 @@ class LMOFreeformController(private val context: Context, private val handler: H
         const val ACTION_START = "com.libremobileos.freeform.START_FREEFORM"
         const val ACTION_STOP = "com.libremobileos.freeform.STOP_FREEFORM"
         const val ACTION_SET_CONFIG = "com.libremobileos.freeform.SET_CONFIG"
+        const val ACTION_TOGGLE_SIDEBAR = "com.libremobileos.freeform.TOGGLE_SIDEBAR"
+        const val ACTION_OPEN_SIDEBAR = "com.libremobileos.freeform.OPEN_SIDEBAR"
+        const val ACTION_CLOSE_SIDEBAR = "com.libremobileos.freeform.CLOSE_SIDEBAR"
         const val PERMISSION_START = "com.libremobileos.permission.START_FREEFORM"
     }
 }
