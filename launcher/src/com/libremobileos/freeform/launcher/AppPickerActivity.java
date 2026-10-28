@@ -87,7 +87,7 @@ public class AppPickerActivity extends Activity {
         root.addView(top);
 
         GridView grid = new GridView(this);
-        grid.setNumColumns(4);
+        grid.setNumColumns(5);
         grid.setVerticalSpacing(dp(8));
         adapter = new AppAdapter();
         grid.setAdapter(adapter);

@@ -86,7 +86,7 @@ class LMOFreeformController(private val context: Context, private val handler: H
     private fun handleSetConfig(intent: Intent) {
         val extras = intent.extras ?: return
         for (key in extras.keySet()) {
-            if (!key.startsWith("lmo_")) continue
+            if (!key.startsWith("lmo_") && key != "freeform_control_mode") continue
             when (val v = extras.get(key)) {
                 is Int -> Settings.System.putInt(context.contentResolver, key, v)
                 is Boolean -> Settings.System.putInt(context.contentResolver, key, if (v) 1 else 0)

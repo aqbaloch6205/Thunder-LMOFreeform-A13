@@ -63,6 +63,23 @@ public class MainActivity extends Activity {
         side.setOnCheckedChangeListener((g, id) -> Prefs.putInt(this, Prefs.SIDE, id == 101 ? 1 : 0));
         box.addView(side);
 
+        TextView ctl = new TextView(this);
+        ctl.setText("Floating window controls");
+        ctl.setPadding(0, dp(12), 0, 0);
+        box.addView(ctl);
+        RadioGroup mode = new RadioGroup(this);
+        mode.setOrientation(RadioGroup.HORIZONTAL);
+        RadioButton mb = new RadioButton(this); mb.setText("Buttons"); mb.setId(200);
+        RadioButton mg = new RadioButton(this); mg.setText("Gesture pill"); mg.setId(201);
+        mode.addView(mb);
+        mode.addView(mg);
+        String cur = Settings.System.getString(getContentResolver(), "freeform_control_mode");
+        mode.check("Gesture".equalsIgnoreCase(cur) || "1".equals(cur) ? 201 : 200);
+        mode.setOnCheckedChangeListener((g, id) -> sendBroadcast(
+                new Intent(Prefs.ACTION_SET_CONFIG).putExtra("freeform_control_mode",
+                        id == 201 ? "Gesture" : "Button")));
+        box.addView(mode);
+
         slider(box, "Handle length (dp)", Prefs.HANDLE_LEN, 40, 300, 100);
         slider(box, "Handle width (dp)", Prefs.HANDLE_WIDTH, 3, 16, 6);
         slider(box, "Handle opacity (%)", Prefs.HANDLE_ALPHA, 20, 100, 70);

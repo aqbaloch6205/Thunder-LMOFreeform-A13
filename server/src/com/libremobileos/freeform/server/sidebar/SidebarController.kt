@@ -179,7 +179,7 @@ class SidebarController(
     private fun entries(): List<Entry> {
         val pm = context.packageManager
         val list = ArrayList<Entry>()
-        list += Entry("All apps", null, "▦") { startLauncherActivity(".AppPickerActivity", false) }
+        list += Entry("All apps", null, "▦") { launch(LAUNCHER_PKG, "$LAUNCHER_PKG.AppPickerActivity") }
         for (s in cfg.pinned) {
             val slash = s.indexOf('/')
             if (slash < 0) continue

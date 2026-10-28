@@ -23,6 +23,7 @@
 
         <activity
             android:name=".AppPickerActivity"
+            android:label="Sidebar"
             android:exported="true"
             android:excludeFromRecents="true" />
 

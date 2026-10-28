@@ -415,13 +415,10 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                 var targetWidth = (currentWidth + effXDelta).roundToInt()
                 var targetHeight = (currentHeight + effYDelta).roundToInt()
 
-                if (targetWidth > targetHeight) {
-                    if (xDelta < 0) targetWidth = targetHeight
-                    else targetHeight = targetWidth
-                }
-
-                targetWidth = max(minAllowedWidth, targetWidth)
-                targetHeight = max(minAllowedHeight, targetHeight)
+                // free resize (portrait, square or landscape); only keep it inside the screen
+                val dm = v.resources.displayMetrics
+                targetWidth = targetWidth.coerceIn(minAllowedWidth, max(minAllowedWidth, dm.widthPixels))
+                targetHeight = targetHeight.coerceIn(minAllowedHeight, max(minAllowedHeight, dm.heightPixels))
 
                 rootView.layoutParams = rootView.layoutParams.apply {
                     width = targetWidth

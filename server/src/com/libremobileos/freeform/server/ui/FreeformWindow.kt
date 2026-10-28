@@ -779,7 +779,7 @@ class FreeformWindow(
         get() {
             val mode = Settings.System.getString(context.contentResolver, CONTROL_MODE_SETTING)
             return when {
-                mode == null -> true
+                mode == null -> false // default: Button mode (pin / maximize / close in title bar)
                 mode.equals(CONTROL_MODE_BUTTON, ignoreCase = true) ||
                         mode == LEGACY_BUTTON_MODE -> false
                 mode.equals(CONTROL_MODE_GESTURE, ignoreCase = true) ||
