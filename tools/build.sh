@@ -61,6 +61,11 @@ sign() { # in out
   --min-sdk-version 33 --target-sdk-version 33 "$WORK/res.zip"
 sign "$WORK/unsigned.apk" "$OUT/LMOFreeform.apk"
 
+# stale files from the old separate-sidebar version (sidebar now lives in system_server)
+rm -f "$ROOT/launcher/src/com/libremobileos/freeform/launcher/SidebarService.java" \
+      "$ROOT/launcher/src/com/libremobileos/freeform/launcher/BootReceiver.java" \
+      "$ROOT/launcher/res/drawable/ic_apps.xml" "$ROOT/launcher/res/drawable/ic_settings.xml"
+
 # 7) launcher app (FreeformLauncher.apk): plain Java, public SDK only
 "$BT/aapt2" compile --dir "$ROOT/launcher/res" -o "$WORK/lres.zip"
 "$BT/aapt2" link -o "$WORK/lunsigned.apk" -I "$PLATFORM_JAR" \
