@@ -10,9 +10,16 @@ import com.libremobileos.freeform.server.Debug.dlog
  * what we need. This keeps the class independent of the exact ITaskStackListener
  * method set (it differs between Android versions / OEM builds).
  */
+/** What a window (floating or ThunderPad) must offer to be driven by task-stack events. */
+interface TaskHost {
+    val handler: android.os.Handler
+    fun onTaskGone(reason: String, removeTask: Boolean)
+    fun onAppRequestedOrientation(landscape: Boolean)
+}
+
 class FreeformTaskStackListener(
     private val displayId: Int,
-    private val window: FreeformWindow
+    private val window: TaskHost
 ) : TaskStackListener() {
 
     var taskId = -1
@@ -25,7 +32,7 @@ class FreeformTaskStackListener(
     override fun onTaskRemoved(taskId: Int) {
         if (this.taskId == taskId) {
             dlog(TAG, "onTaskRemoved $taskId")
-            window.handler.post { window.destroy("onTaskRemoved", true) }
+            window.handler.post { window.onTaskGone("onTaskRemoved", true) }
         }
     }
 
@@ -62,7 +69,7 @@ class FreeformTaskStackListener(
 
     override fun onTaskDisplayChanged(taskId: Int, newDisplayId: Int) {
         if (taskId == this.taskId && newDisplayId == Display.DEFAULT_DISPLAY) {
-            window.handler.post { window.destroy("onTaskDisplayChanged: $taskId to main display", false) }
+            window.handler.post { window.onTaskGone("onTaskDisplayChanged: $taskId to main display", false) }
         } else if (newDisplayId == displayId) {
             this.taskId = taskId
             dlog(TAG, "onTaskDisplayChanged: $taskId to freeform display")

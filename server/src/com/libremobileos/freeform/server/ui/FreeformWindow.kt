@@ -35,11 +35,14 @@ import kotlin.math.roundToInt
 import kotlin.math.sign
 
 class FreeformWindow(
-    val handler: Handler,
+    override val handler: Handler,
     val context: Context,
     private val appConfig: AppConfig,
     val freeformConfig: FreeformConfig
-): TextureView.SurfaceTextureListener, FreeformDisplayCallback, View.OnTouchListener {
+): TextureView.SurfaceTextureListener, FreeformDisplayCallback, View.OnTouchListener, TaskHost {
+
+    override fun onTaskGone(reason: String, removeTask: Boolean) = destroy(reason, removeTask)
+
 
     var freeformTaskStackListener: FreeformTaskStackListener? = null
     val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -70,7 +73,11 @@ class FreeformWindow(
     private var requestedLandscape: Boolean? = null
 
     private var appPackageName: String = ""
-    private var appIcon: Drawable? = null
+    var appIcon: Drawable? = null
+        private set
+    val appLabel: String get() = appPackageName
+    @Volatile var isMinimized = false
+        private set
     private var isInitialized = false
 
     private val rotationWatcher = object : IRotationWatcher.Stub() {
@@ -104,7 +111,7 @@ class FreeformWindow(
     }
 
     /** The running app asked for landscape/portrait: reshape the window (unless the user forced one). */
-    fun onAppRequestedOrientation(landscape: Boolean) {
+    override fun onAppRequestedOrientation(landscape: Boolean) {
         if (profile.orientation != AppProfiles.AUTO) return
         handler.post {
             if (requestedLandscape == landscape) return@post
@@ -444,44 +451,58 @@ class FreeformWindow(
     }
 
     /**
+     * Pin / shrink-to-minimize: the window is hidden (the app keeps running) and a floating
+     * stack bubble ([FreeformStack]) lets the user bring any minimized app back.
      * Called in system handler
      */
-    @SuppressLint("ClickableViewAccessibility")
     fun handleHangUp() {
-        val rootView = freeformRootView ?: return
+        if (isMinimized) restoreFromStack() else minimize()
+    }
+
+    fun minimize() {
         val layout = freeformWindowView ?: freeformLayout ?: return
-        val topBar = topBarView ?: return
-        val bottomBar = bottomBarView ?: return
-        val view = freeformView ?: return
-        
-        if (freeformConfig.isHangUp) {
-            windowParams.apply {
-                x = freeformConfig.notInHangUpX
-                y = freeformConfig.notInHangUpY
-                flags = flags or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
-            }
-            rootView.layoutParams.apply {
+        if (isMinimized) return
+        isMinimized = true
+        // make sure the size we come back with is the real one (drag may have left a smaller root)
+        freeformRootView?.let { root ->
+            root.layoutParams = root.layoutParams.apply {
                 width = freeformConfig.width
                 height = freeformConfig.height
             }
-            windowManager.updateViewLayout(layout, windowParams)
-            topBar.visibility = View.VISIBLE
-            bottomBar.visibility = View.VISIBLE
-            freeformConfig.isHangUp = false
-            view.setOnTouchListener(this)
-        } else {
-            freeformConfig.notInHangUpX = windowParams.x
-            freeformConfig.notInHangUpY = windowParams.y
-            toHangUp()
-            topBar.visibility = View.GONE
-            bottomBar.visibility = View.GONE
-            freeformConfig.isHangUp = true
-            val gestureDetector = GestureDetector(context, hangUpGestureListener)
-            view.setOnTouchListener { _, event ->
-                gestureDetector.onTouchEvent(event)
-                if (event.action == MotionEvent.ACTION_UP) makeSureFreeformInScreen()
-                true
-            }
+        }
+        windowParams.apply {
+            alpha = 0f
+            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        }
+        runCatching { windowManager.updateViewLayout(layout, windowParams) }
+            .onFailure { Slog.e(TAG, "minimize: $it") }
+        FreeformStack.add(this)
+    }
+
+    fun restoreFromStack() {
+        val layout = freeformWindowView ?: freeformLayout ?: return
+        if (!isMinimized) return
+        isMinimized = false
+        windowParams.apply {
+            alpha = 1f
+            flags = flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        }
+        // (do not remove/re-add the view: that would destroy the TextureView surface)
+        runCatching { windowManager.updateViewLayout(layout, windowParams) }
+            .onFailure { Slog.e(TAG, "restore: $it") }
+        FreeformStack.remove(this)
+    }
+
+    /** Apply a new window size: re-measure and resize the virtual display so the app re-lays out. */
+    fun applyWindowSize(w: Int, h: Int) {
+        handler.post {
+            freeformConfig.width = w
+            freeformConfig.height = h
+            measureScale()
+            LMOFreeformServiceHolder.resizeFreeform(
+                this, freeformConfig.freeformWidth, freeformConfig.freeformHeight, freeformConfig.densityDpi)
+            freeformView?.surfaceTexture?.setDefaultBufferSize(
+                freeformConfig.freeformWidth, freeformConfig.freeformHeight)
         }
     }
 
@@ -702,6 +723,7 @@ class FreeformWindow(
             return
         }
         
+        FreeformStack.remove(this)
         removeView(false)
         handler.removeCallbacks(destroyRunnable)
         

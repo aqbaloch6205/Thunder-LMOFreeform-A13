@@ -23,6 +23,10 @@ class SidebarConfig(private val context: Context) {
         get() = (runCatching { Settings.System.getString(context.contentResolver, PINNED) }.getOrNull() ?: "")
             .split('\n').map { it.trim() }.filter { it.isNotEmpty() }
 
+    fun setPinned(list: List<String>) {
+        runCatching { Settings.System.putString(context.contentResolver, PINNED, list.joinToString("\n")) }
+    }
+
     fun setHandleY(y: Int) {
         runCatching { Settings.System.putInt(context.contentResolver, HANDLE_Y, y) }
     }

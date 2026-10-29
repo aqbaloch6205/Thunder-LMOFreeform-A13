@@ -374,8 +374,10 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
     private var startX = 0.0f
     private var startY = 0.0f
     private var isPinTriggered = false
+    private var lastLive = 0L
 
     companion object {
+        private const val LIVE_INTERVAL_MS = 90L
         private const val PIN_THRESHOLD_DP = 160
         private const val MIN_WINDOW_SIZE_DP = 110
     }
@@ -386,7 +388,6 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
         val rootView = window.freeformRootView ?: return true
-        val veilView = window.veilView ?: return true
         val freeformView = window.freeformView ?: return true
         
         when (event.actionMasked) {
@@ -394,8 +395,7 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                 startX = event.rawX
                 startY = event.rawY
                 isPinTriggered = false
-                rootView.visibility = View.INVISIBLE
-                veilView.visibility = View.VISIBLE
+                lastLive = 0L
             }
             MotionEvent.ACTION_MOVE -> {
                 val xDelta = if (isRight) (event.rawX - startX) else (startX - event.rawX)
@@ -436,6 +436,13 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                     }
                 }
 
+                // live resize: the app re-lays out while you drag (throttled)
+                val now = android.os.SystemClock.uptimeMillis()
+                if (!isPinTriggered && now - lastLive >= LIVE_INTERVAL_MS) {
+                    lastLive = now
+                    window.applyWindowSize(targetWidth, targetHeight)
+                }
+
                 startX = event.rawX
                 startY = event.rawY
             }
@@ -443,30 +450,12 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                 if (isPinTriggered) {
                     isPinTriggered = false
                     window.resetTitle(animated = false)
-                    rootView.visibility = View.VISIBLE
-                    veilView.visibility = View.GONE
                     window.handler.post { window.handleHangUp() }
                     return true
                 }
 
-                freeformView.surfaceTexture?.let { surfaceTexture ->
-                    window.freeformConfig.width = rootView.layoutParams.width
-                    window.freeformConfig.height = rootView.layoutParams.height
-                    window.handler.post { window.makeSureFreeformInScreen() }
-                    window.measureScale()
-                    LMOFreeformServiceHolder.resizeFreeform(
-                        window,
-                        window.freeformConfig.freeformWidth,
-                        window.freeformConfig.freeformHeight,
-                        window.freeformConfig.densityDpi
-                    )
-                    surfaceTexture.setDefaultBufferSize(window.freeformConfig.freeformWidth, window.freeformConfig.freeformHeight)
-                    // Delay the unveiling until after the scaling is complete
-                    window.handler.postDelayed({
-                        rootView.visibility = View.VISIBLE
-                        veilView.visibility = View.GONE
-                    }, 250)
-                }
+                window.applyWindowSize(rootView.layoutParams.width, rootView.layoutParams.height)
+                window.handler.post { window.makeSureFreeformInScreen() }
             }
             MotionEvent.ACTION_CANCEL -> {
                 if (isPinTriggered) {
@@ -477,8 +466,6 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                     width = window.freeformConfig.width
                     height = window.freeformConfig.height
                 }
-                rootView.visibility = View.VISIBLE
-                veilView.visibility = View.GONE
             }
         }
         return true

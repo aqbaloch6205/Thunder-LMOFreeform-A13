@@ -28,7 +28,7 @@ object LMOFreeformBoot {
             val controller = LMOFreeformController(ctx, handler)
             controller.register()
             val sidebar = com.libremobileos.freeform.server.sidebar.SidebarController(ctx, handler) { pkg, act ->
-                controller.start(pkg, act)
+                controller.launchApp(pkg, act)
             }
             LMOFreeformApi.sidebar = sidebar
             sidebar.start()

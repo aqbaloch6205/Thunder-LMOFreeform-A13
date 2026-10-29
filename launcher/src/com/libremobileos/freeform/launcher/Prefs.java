@@ -22,6 +22,7 @@ final class Prefs {
     static final String ICON_SIZE = "lmo_sb_icon_size_dp";
     static final String PANEL_ALPHA = "lmo_sb_panel_alpha";
     static final String PINNED = "lmo_sb_pinned";             // "pkg/activity" joined by '\n'
+    static final String PADS = "lmo_thunderpad_apps";         // pkg|w|h|dpi|fit;...
     static final String PROFILES = "lmo_freeform_profiles";   // pkg|orient|w%|h%|dpi;...
 
     private Prefs() {}
@@ -53,6 +54,34 @@ final class Prefs {
 
     static void setPinned(Context c, List<String> list) {
         putString(c, PINNED, String.join("\n", list));
+    }
+
+    /** ThunderPad profile {w, h, dpi, fit(0 original / 1 stretch)} or null */
+    static int[] pad(Context c, String pkg) {
+        for (String e : getString(c, PADS).split(";")) {
+            String[] f = e.split("\\|");
+            if (f.length >= 5 && f[0].equals(pkg)) {
+                try {
+                    return new int[] { Integer.parseInt(f[1]), Integer.parseInt(f[2]),
+                            Integer.parseInt(f[3]), Integer.parseInt(f[4]) };
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return null;
+    }
+
+    /** p == null removes the profile */
+    static void setPad(Context c, String pkg, int[] p) {
+        StringBuilder sb = new StringBuilder();
+        for (String e : getString(c, PADS).split(";")) {
+            if (e.isEmpty() || e.startsWith(pkg + "|")) continue;
+            sb.append(e).append(';');
+        }
+        if (p != null) sb.append(pkg).append('|').append(p[0]).append('|').append(p[1])
+                .append('|').append(p[2]).append('|').append(p[3]).append(';');
+        String out = sb.toString();
+        if (out.endsWith(";")) out = out.substring(0, out.length() - 1);
+        putString(c, PADS, out);
     }
 
     /** returns {orientation, widthPct, heightPct, dpi}; zeros = auto */

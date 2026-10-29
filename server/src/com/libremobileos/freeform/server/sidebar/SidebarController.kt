@@ -1,7 +1,9 @@
 package com.libremobileos.freeform.server.sidebar
 
 import android.animation.ValueAnimator
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -50,12 +52,36 @@ class SidebarController(
     private var handleLp: WindowManager.LayoutParams? = null
     private var panel: View? = null
 
+    /** cached panel (view tree + size), rebuilt only when config / pinned apps / packages change */
+    private var panelView: View? = null
+    private var panelW = 0
+    private var panelH = 0
+
+    private val drawer = AppDrawer(context, handler, cfg, launch,
+        onPinnedChanged = { panelView = null; preparePanel() },
+        onLoaded = { panelView = null; preparePanel() })
+
     private val observer = object : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             val key = uri?.lastPathSegment ?: ""
             if (!key.startsWith("lmo_sb_")) return
-            if (key == SidebarConfig.HANDLE_Y || key == SidebarConfig.PINNED) return
+            if (key == SidebarConfig.HANDLE_Y) return
+            if (key == SidebarConfig.PINNED) { panelView = null; preparePanel(); return }
+            drawer.hide()
             rebuild()
+        }
+    }
+
+    private val systemReceiver = object : BroadcastReceiver() {
+        private val refresh = Runnable { panelView = null; drawer.invalidate(); preparePanel() }
+        override fun onReceive(c: Context, i: Intent) {
+            if (i.action == Intent.ACTION_CONFIGURATION_CHANGED) {
+                drawer.hide(); drawer.invalidate(); rebuild()
+            } else {
+                // package added / removed / changed: debounce bursts
+                handler.removeCallbacks(refresh)
+                handler.postDelayed(refresh, 1500)
+            }
         }
     }
 
@@ -63,18 +89,38 @@ class SidebarController(
         runCatching {
             context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, observer)
         }.onFailure { Slog.e(TAG, "observer", it) }
+        runCatching {
+            val pk = IntentFilter().apply {
+                addAction(Intent.ACTION_PACKAGE_ADDED)
+                addAction(Intent.ACTION_PACKAGE_REMOVED)
+                addAction(Intent.ACTION_PACKAGE_CHANGED)
+                addDataScheme("package")
+            }
+            context.registerReceiverForAllUsers(systemReceiver, pk, null, handler)
+            context.registerReceiverForAllUsers(systemReceiver,
+                IntentFilter(Intent.ACTION_CONFIGURATION_CHANGED), null, handler)
+        }.onFailure { Slog.e(TAG, "receiver", it) }
         rebuild()
+        // icon / app-list cache is loaded once on a background thread (not on the UI thread),
+        // so the first panel open is already instant
+        drawer.prepare()
     }
 
     fun rebuild() = handler.post {
         closePanelNow()
         removeHandle()
-        if (cfg.enabled) addHandle()
+        panelView = null
+        if (cfg.enabled) {
+            addHandle()
+            preparePanel()
+        }
     }
 
     fun open() = handler.post { if (panel == null) openPanel() }
-    fun close() = handler.post { closePanelNow() }
-    fun toggle() = handler.post { if (panel == null) openPanel() else closePanelNow() }
+    fun close() = handler.post { closePanelNow(); drawer.hide() }
+    fun toggle() = handler.post {
+        if (panel == null) { drawer.hide(); openPanel() } else closePanelNow()
+    }
 
     private fun dp(v: Float) = (v * context.resources.displayMetrics.density).roundToInt()
     private fun dp(v: Int) = dp(v.toFloat())
@@ -153,7 +199,7 @@ class SidebarController(
                     }
                     MotionEvent.ACTION_UP -> {
                         handler.removeCallbacks(lpRun)
-                        if (dragging) cfg.setHandleY(lp.y) else if (!moved) openPanel()
+                        if (dragging) cfg.setHandleY(lp.y)      // plain tap does nothing: swipe inward to open
                         dragging = false
                     }
                     MotionEvent.ACTION_CANCEL -> {
@@ -179,12 +225,17 @@ class SidebarController(
     private fun entries(): List<Entry> {
         val pm = context.packageManager
         val list = ArrayList<Entry>()
-        list += Entry("All apps", null, "▦") { launch(LAUNCHER_PKG, "$LAUNCHER_PKG.AppPickerActivity") }
+        list += Entry("All apps", null, "▦") { drawer.toggle() }
         for (s in cfg.pinned) {
             val slash = s.indexOf('/')
             if (slash < 0) continue
             val pkg = s.substring(0, slash)
             val act = s.substring(slash + 1)
+            val cached = drawer.lookup(s)
+            if (cached != null) {
+                list += Entry(cached.first, cached.second, null) { launch(pkg, act) }
+                continue
+            }
             try {
                 val ai = pm.getActivityInfo(ComponentName(pkg, act), 0)
                 list += Entry(ai.loadLabel(pm).toString(), ai.loadIcon(pm), null) { launch(pkg, act) }
@@ -204,9 +255,9 @@ class SidebarController(
         }.onFailure { Slog.e(TAG, "start $cls (is FreeformLauncher.apk installed?)", it) }
     }
 
-    private fun openPanel() {
-        if (panel != null) return
-        val right = cfg.right
+    /** Build (once) the panel view tree; cheap to re-show afterwards. */
+    private fun preparePanel() {
+        if (panelView != null) return
         val night = cfg.night
         val iconPx = dp(cfg.iconDp)
         val cols = cfg.columns
@@ -242,7 +293,7 @@ class SidebarController(
             addView(grid)
         }
         val alpha = (255 * cfg.panelAlpha / 100f).roundToInt()
-        val box = FrameLayout(context).apply {
+        panelView = FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 setColor((if (night) 0x00202124 else 0x00F5F5F5) or (alpha shl 24))
                 cornerRadius = dp(24).toFloat()
@@ -255,10 +306,18 @@ class SidebarController(
                 if (ev.action == MotionEvent.ACTION_OUTSIDE) { closePanelNow(); true } else false
             }
         }
-
         val rows = (list.size + cols - 1) / cols
-        val w = cols * cell + dp(12)
-        val h = min(rows * cell + dp(16), (screenH() * 0.8f).roundToInt())
+        panelW = cols * cell + dp(12)
+        panelH = min(rows * cell + dp(16), (screenH() * 0.8f).roundToInt())
+    }
+
+    private fun openPanel() {
+        if (panel != null) return
+        preparePanel()
+        val box = panelView ?: return
+        val right = cfg.right
+        val w = panelW
+        val h = panelH
         val hy = handleLp?.y ?: (screenH() / 3)
         val y = (hy - h / 2 + dp(50)).coerceIn(dp(24), max(dp(24), screenH() - h - dp(24)))
         val lp = WindowManager.LayoutParams(
@@ -274,13 +333,14 @@ class SidebarController(
             this.y = y
             title = "LMOSidebarPanel"
         }
+        (box.parent as? ViewGroup)?.removeView(box)
         if (runCatching { wm.addView(box, lp) }.isFailure) return
         panel = box
 
         val from = (if (right) 1 else -1) * (w + dp(10)).toFloat()
         box.translationX = from
         ValueAnimator.ofFloat(from, 0f).apply {
-            duration = 220
+            duration = 200
             addUpdateListener { box.translationX = it.animatedValue as Float }
             start()
         }

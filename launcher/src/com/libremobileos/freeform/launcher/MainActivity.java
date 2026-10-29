@@ -90,6 +90,9 @@ public class MainActivity extends Activity {
         box.addView(button("Choose sidebar apps", () ->
                 startActivity(new Intent(this, AppPickerActivity.class)
                         .putExtra(AppPickerActivity.EXTRA_PIN, true))));
+        box.addView(button("ThunderPad (iPad view, fullscreen)", () ->
+                startActivity(new Intent(this, AppPickerActivity.class)
+                        .putExtra(AppPickerActivity.EXTRA_PAD, true))));
         box.addView(button("Default window size", this::showSizeDialog));
         box.addView(button("Open an app (long-press = per-app window settings)", () ->
                 startActivity(new Intent(this, AppPickerActivity.class))));

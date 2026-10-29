@@ -36,6 +36,13 @@ import java.util.Locale;
  */
 public class AppPickerActivity extends Activity {
     static final String EXTRA_PIN = "pin";
+    static final String EXTRA_PAD = "pad";
+    private static final String ACTION_START_PAD = "com.libremobileos.freeform.START_THUNDERPAD";
+    private static final String[] PAD_NAMES = {
+            "iPad mini 5 (2048x1536)", "iPad 10.2\" (2160x1620)", "iPad Air 11\" (2360x1640)",
+            "iPad Pro 11\" (2388x1668)", "iPad Pro 12.9\" (2732x2048)", "Custom" };
+    private static final int[][] PAD_VALUES = {
+            {2048, 1536, 326}, {2160, 1620, 264}, {2360, 1640, 264}, {2388, 1668, 264}, {2732, 2048, 264} };
     private static final String ACTION_START = "com.libremobileos.freeform.START_FREEFORM";
 
     private static class Item {
@@ -48,6 +55,7 @@ public class AppPickerActivity extends Activity {
     private final List<String> selected = new ArrayList<>(); // ordered "pkg/activity"
     private BaseAdapter adapter;
     private boolean pinMode;
+    private boolean padMode;
 
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
@@ -57,6 +65,7 @@ public class AppPickerActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         pinMode = getIntent().getBooleanExtra(EXTRA_PIN, false);
+        padMode = getIntent().getBooleanExtra(EXTRA_PAD, false);
         if (pinMode) selected.addAll(Prefs.pinned(this));
 
         LinearLayout root = new LinearLayout(this);
@@ -65,7 +74,8 @@ public class AppPickerActivity extends Activity {
 
         TextView title = new TextView(this);
         title.setTextSize(18);
-        title.setText(pinMode ? "Choose sidebar apps" : "Open in floating window");
+        title.setText(padMode ? "ThunderPad: choose an app (iPad view)"
+                : pinMode ? "Choose sidebar apps" : "Open in floating window");
         root.addView(title);
 
         LinearLayout top = new LinearLayout(this);
@@ -96,12 +106,14 @@ public class AppPickerActivity extends Activity {
             if (pinMode) {
                 if (!selected.remove(it.key)) selected.add(it.key);
                 adapter.notifyDataSetChanged();
+            } else if (padMode) {
+                showPad(it);
             } else {
                 start(it);
             }
         });
         grid.setOnItemLongClickListener((parent, view, position, id) -> {
-            if (pinMode) return false;
+            if (pinMode || padMode) return false;
             showProfile(shown.get(position));
             return true;
         });
@@ -181,6 +193,98 @@ public class AppPickerActivity extends Activity {
                 .show();
     }
 
+    /** ThunderPad: tablet resolution + fit mode for one app (opens fullscreen from the sidebar). */
+    private void showPad(Item it) {
+        int[] cur = Prefs.pad(this, it.pkg);
+        int[] def = cur != null ? cur : new int[] { 2048, 1536, 326, 0 };
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(12), dp(20), 0);
+
+        TextView t1 = new TextView(this);
+        t1.setText("Resolution preset");
+        box.addView(t1);
+        Spinner preset = new Spinner(this);
+        preset.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, PAD_NAMES));
+        int sel = PAD_NAMES.length - 1;
+        for (int i = 0; i < PAD_VALUES.length; i++) {
+            if (PAD_VALUES[i][0] == def[0] && PAD_VALUES[i][1] == def[1]) sel = i;
+        }
+        preset.setSelection(sel);
+        box.addView(preset);
+
+        EditText ew = num("Width", def[0]);
+        EditText eh = num("Height", def[1]);
+        EditText ed = num("DPI", def[2]);
+        box.addView(ew);
+        box.addView(eh);
+        box.addView(ed);
+        preset.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> p, View v, int pos, long id) {
+                if (pos < PAD_VALUES.length) {
+                    ew.setText(String.valueOf(PAD_VALUES[pos][0]));
+                    eh.setText(String.valueOf(PAD_VALUES[pos][1]));
+                    ed.setText(String.valueOf(PAD_VALUES[pos][2]));
+                }
+            }
+            @Override public void onNothingSelected(android.widget.AdapterView<?> p) {}
+        });
+
+        TextView t2 = new TextView(this);
+        t2.setText("Fit to screen");
+        t2.setPadding(0, dp(10), 0, 0);
+        box.addView(t2);
+        Spinner fit = new Spinner(this);
+        fit.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+                new String[] { "Original (keep ratio, black bars)", "Stretch to fit (fill the screen)" }));
+        fit.setSelection(def[3] == 1 ? 1 : 0);
+        box.addView(fit);
+
+        TextView hint = new TextView(this);
+        hint.setText("Open this app from the sidebar to get it fullscreen with this resolution.");
+        hint.setTextSize(12);
+        hint.setPadding(0, dp(10), 0, 0);
+        box.addView(hint);
+
+        android.content.DialogInterface.OnClickListener save = (d, which) -> {
+            int w = parse(ew, 2048), h = parse(eh, 1536), dpi = parse(ed, 326);
+            w = Math.max(480, Math.min(w, 4096));
+            h = Math.max(480, Math.min(h, 4096));
+            dpi = Math.max(120, Math.min(dpi, 800));
+            Prefs.setPad(this, it.pkg, new int[] { w, h, dpi, fit.getSelectedItemPosition() });
+            if (which == android.content.DialogInterface.BUTTON_POSITIVE) {
+                sendBroadcast(new Intent(ACTION_START_PAD)
+                        .putExtra("packageName", it.pkg).putExtra("activityName", it.activity)
+                        .putExtra("userId", Process.myUid() / 100000));
+                finish();
+            } else {
+                adapter.notifyDataSetChanged();
+            }
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("ThunderPad: " + it.label)
+                .setView(box)
+                .setPositiveButton("Save & open", save)
+                .setNeutralButton("Save", save)
+                .setNegativeButton("Remove", (d, which) -> {
+                    Prefs.setPad(this, it.pkg, null);
+                    adapter.notifyDataSetChanged();
+                })
+                .show();
+    }
+
+    private EditText num(String hint, int value) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        e.setText(String.valueOf(value));
+        return e;
+    }
+
+    private int parse(EditText e, int def) {
+        try { return Integer.parseInt(e.getText().toString().trim()); } catch (Exception x) { return def; }
+    }
+
     private SeekBar bar(LinearLayout box, String title, int min, int max, int value) {
         TextView label = new TextView(this);
         label.setText(title + ": " + value);
@@ -239,7 +343,8 @@ public class AppPickerActivity extends Activity {
             Item it = shown.get(position);
             ((ImageView) holder[0]).setImageDrawable(it.icon);
             ((TextView) holder[1]).setText(it.label);
-            cell.setBackgroundColor(pinMode && selected.contains(it.key) ? 0x553F8CFF : 0);
+            boolean mark = (pinMode && selected.contains(it.key)) || (padMode && Prefs.pad(AppPickerActivity.this, it.pkg) != null);
+            cell.setBackgroundColor(mark ? 0x553F8CFF : 0);
             return cell;
         }
     }
