@@ -196,7 +196,7 @@ public class AppPickerActivity extends Activity {
     /** ThunderPad: tablet resolution + fit mode for one app (opens fullscreen from the sidebar). */
     private void showPad(Item it) {
         int[] cur = Prefs.pad(this, it.pkg);
-        int[] def = cur != null ? cur : new int[] { 2048, 1536, 326, 0 };
+        int[] def = cur != null ? cur : new int[] { 2048, 1536, 326, 0 };   // fit 0 = fill
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(20), dp(12), dp(20), 0);
@@ -236,12 +236,13 @@ public class AppPickerActivity extends Activity {
         box.addView(t2);
         Spinner fit = new Spinner(this);
         fit.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
-                new String[] { "Original (keep ratio, black bars)", "Stretch to fit (fill the screen)" }));
-        fit.setSelection(def[3] == 1 ? 1 : 0);
+                new String[] { "Fill screen (recommended, like a normal app)",
+                        "Original (tablet ratio, black bars)", "Stretch to fit (exact resolution)" }));
+        fit.setSelection(Math.max(0, Math.min(2, def[3])));
         box.addView(fit);
 
         TextView hint = new TextView(this);
-        hint.setText("Open this app from the sidebar to get it fullscreen with this resolution.");
+        hint.setText("Open this app from the sidebar / All apps to get it fullscreen. Home or another app hides it (it keeps running); open it again from the sidebar to continue.");
         hint.setTextSize(12);
         hint.setPadding(0, dp(10), 0, 0);
         box.addView(hint);

@@ -12,7 +12,10 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
+import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.view.animation.DecelerateInterpolator
 import android.net.Uri
 import android.os.Handler
 import android.os.UserHandle
@@ -119,7 +122,7 @@ class SidebarController(
     fun open() = handler.post { if (panel == null) openPanel() }
     fun close() = handler.post { closePanelNow(); drawer.hide() }
     fun toggle() = handler.post {
-        if (panel == null) { drawer.hide(); openPanel() } else closePanelNow()
+        if (panel == null) { drawer.hide(); openPanel() } else closePanelAnimated()
     }
 
     private fun dp(v: Float) = (v * context.resources.displayMetrics.density).roundToInt()
@@ -151,7 +154,7 @@ class SidebarController(
         y = y.coerceIn(0, max(0, screenH() - barH))
 
         val lp = WindowManager.LayoutParams(
-            dp(24), barH, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            dp(32), barH, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -164,6 +167,10 @@ class SidebarController(
         }
         handleLp = lp
 
+        // tell the system not to start the back gesture on our handle (it would steal the swipe)
+        box.addOnLayoutChangeListener { v, l, t, r, b, _, _, _, _ ->
+            v.systemGestureExclusionRects = listOf(android.graphics.Rect(0, 0, r - l, b - t))
+        }
         val slop = ViewConfiguration.get(context).scaledTouchSlop
         val longPress = ViewConfiguration.getLongPressTimeout().toLong()
         box.setOnTouchListener(object : View.OnTouchListener {
@@ -203,7 +210,12 @@ class SidebarController(
                         dragging = false
                     }
                     MotionEvent.ACTION_CANCEL -> {
-                        handler.removeCallbacks(lpRun); dragging = false
+                        // the system took the gesture (back / home): if we already moved inward, still open
+                        handler.removeCallbacks(lpRun)
+                        val dx = e.rawX - downX
+                        val inward = if (right) dx < -slop * 2 else dx > slop * 2
+                        if (!dragging && inward) openPanel()
+                        dragging = false
                     }
                 }
                 return true
@@ -217,9 +229,29 @@ class SidebarController(
 
     private class Entry(val label: String, val icon: Drawable?, val glyph: String?, val action: () -> Unit)
 
+    private var closing: View? = null
+
     private fun closePanelNow() {
         panel?.let { runCatching { wm.removeViewImmediate(it) } }
         panel = null
+        finishClosing()
+    }
+
+    private fun finishClosing() {
+        closing?.let { c -> c.animate().cancel(); runCatching { wm.removeViewImmediate(c) } }
+        closing = null
+    }
+
+    /** slide out smoothly, then remove */
+    private fun closePanelAnimated() {
+        val v = panel ?: return
+        panel = null
+        closing = v
+        val right = cfg.right
+        v.animate().translationX((if (right) 1 else -1) * (v.width + dp(10)).toFloat()).alpha(0f)
+            .setDuration(140).setInterpolator(DecelerateInterpolator())
+            .withEndAction { if (closing === v) { runCatching { wm.removeViewImmediate(v) }; closing = null } }
+            .start()
     }
 
     private fun entries(): List<Entry> {
@@ -285,6 +317,9 @@ class SidebarController(
                 }
             }
             v.contentDescription = e.label
+            v.background = RippleDrawable(
+                ColorStateList.valueOf(if (night) 0x44FFFFFF else 0x33000000), null,
+                GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) })
             v.setOnClickListener { closePanelNow(); e.action() }
             grid.addView(v, GridLayout.LayoutParams().apply { width = cell; height = cell })
         }
@@ -303,7 +338,7 @@ class SidebarController(
             addView(scroll, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             setOnTouchListener { _, ev ->
-                if (ev.action == MotionEvent.ACTION_OUTSIDE) { closePanelNow(); true } else false
+                if (ev.action == MotionEvent.ACTION_OUTSIDE) { closePanelAnimated(); true } else false
             }
         }
         val rows = (list.size + cols - 1) / cols
@@ -313,6 +348,7 @@ class SidebarController(
 
     private fun openPanel() {
         if (panel != null) return
+        finishClosing()
         preparePanel()
         val box = panelView ?: return
         val right = cfg.right
@@ -338,12 +374,10 @@ class SidebarController(
         panel = box
 
         val from = (if (right) 1 else -1) * (w + dp(10)).toFloat()
+        box.alpha = 0f
         box.translationX = from
-        ValueAnimator.ofFloat(from, 0f).apply {
-            duration = 200
-            addUpdateListener { box.translationX = it.animatedValue as Float }
-            start()
-        }
+        box.animate().translationX(0f).alpha(1f).setDuration(200)
+            .setInterpolator(DecelerateInterpolator(1.6f)).start()
     }
 
     companion object {

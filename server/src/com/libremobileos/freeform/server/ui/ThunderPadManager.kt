@@ -8,6 +8,11 @@ object ThunderPadManager {
     private var current: ThunderPadWindow? = null
 
     fun start(handler: Handler, context: Context, pkg: String, activity: String, userId: Int, profile: PadProfile) {
+        val cur = current
+        if (cur != null && cur.pkg == pkg && !cur.isDestroyed) {   // already running: just bring it back
+            cur.handler.post { cur.resume() }
+            return
+        }
         closeAll()
         val w = ThunderPadWindow(handler, context, AppConfig(pkg, activity, null, userId, -1), pkg, profile)
         current = w

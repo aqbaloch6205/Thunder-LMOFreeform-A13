@@ -132,6 +132,9 @@ object FreeformStack {
         })
         bubble = box
         runCatching { w.addView(box, lp) }.onFailure { bubble = null }
+        box.scaleX = 0.3f; box.scaleY = 0.3f; box.alpha = 0f
+        box.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(220)
+            .setInterpolator(android.view.animation.OvershootInterpolator(1.4f)).start()
     }
 
     private fun removeBubble() {
@@ -211,6 +214,10 @@ object FreeformStack {
             y = (blp.y - h / 2 + dp(26)).coerceIn(dp(24), max(dp(24), screenH() - h - dp(24)))
             title = "LMOStackList"
         }
-        if (runCatching { w.addView(col, lp) }.isSuccess) list = col
+        if (runCatching { w.addView(col, lp) }.isSuccess) {
+            list = col
+            col.alpha = 0f
+            col.animate().alpha(1f).setDuration(120).start()
+        }
     }
 }

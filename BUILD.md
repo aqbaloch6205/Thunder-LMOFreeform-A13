@@ -11,7 +11,7 @@ What you get:
 - **Smart window size**: portrait apps get a portrait window, landscape apps (games, video) a 16:9 window; rotation and `setRequestedOrientation` reshape the window live.
 - **Minimize stack**: the pin button (or shrinking a window) hides the window and puts it in one floating bubble at the screen edge. Tap = restore (several apps: expand the list, tap an icon to restore, long-press to close). The app keeps running, nothing lags in games.
 - **Live resize**: the app re-lays out while you drag the corner, any size or shape.
-- **ThunderPad (iPad view)**: pick any app and a tablet resolution (iPad mini 5 2048x1536, iPad 10.2/Air/Pro, or custom WxH + dpi). The app runs fullscreen on a virtual display with that resolution, so it shows its tablet layout on your phone. Choose **Original** (keep aspect ratio, black bars) or **Stretch to fit** (fill the whole screen). Open the app from the sidebar to get it. Edge handle (⋮): Back / Original-Stretch / Close; the Back key works too.
+- **ThunderPad (iPad view)**: pick any app and a tablet resolution (iPad mini 5 2048x1536, iPad 10.2/Air/Pro, or custom WxH + dpi). The app runs fullscreen on a virtual display with that resolution, so it shows its tablet layout on your phone. Default **Fill** looks like a normal fullscreen app; **Original** / **Stretch** are available too. Home or another app hides it (app keeps running), reopen from the sidebar.
 - **Per-app profile**: force orientation, width %, height %, dpi for any app.
 - **Sidebar** inside `system_server`: open it by swiping in from the edge (taps do nothing, so it never triggers by accident in games). "All apps" is a cached system overlay (instant); long-press an app there to pin it. Open/close with a hardware key via one smali line.
 - A small settings app (`FreeformLauncher.apk`).
@@ -132,9 +132,14 @@ Broadcast actions (`com.libremobileos.freeform.…`): `START_FREEFORM` (extras `
 
 Configure in the settings app → *ThunderPad (iPad view, fullscreen)* → tap an app → preset / custom resolution + fit mode → *Save & open*.
 Apps with a ThunderPad profile open fullscreen in pad mode when launched from the **sidebar / All apps**; other apps open as floating windows.
-Orientation follows the app (manifest / runtime request), otherwise the phone rotation: landscape apps get e.g. 2048x1536, portrait apps 1536x2048.
-Broadcast: `am broadcast -a com.libremobileos.freeform.START_THUNDERPAD --es packageName <pkg> [--ei padW 2048 --ei padH 1536 --ei padDpi 326 --ei padFit 0|1]`, stop with `STOP_THUNDERPAD`.
-Setting: `lmo_thunderpad_apps` = `pkg|w|h|dpi|fit;…` (fit 0 original, 1 stretch).
+
+- **Fill** (default): fills the screen like a normal app, no bars, no distortion. The virtual display keeps the phone's aspect and uses the preset's size/dpi (at least ~600dp wide, so apps show their tablet layout).
+- **Original**: exact tablet aspect (e.g. 2048x1536) with black bars. **Stretch**: exact tablet resolution stretched over the screen.
+- Orientation follows the app (manifest / runtime request), otherwise the phone rotation. A landscape app on a portrait phone is shown rotated, so turning the phone makes it upright (⟳ flips the direction).
+- **Home / Recents / another app hides the pad** and the app keeps running in the background, like a normal app. Open it again from the sidebar to continue. The edge handle (⋮) has Back / fit mode / flip / **Close** (really closes the app). The Back key works too.
+
+Broadcast: `am broadcast -a com.libremobileos.freeform.START_THUNDERPAD --es packageName <pkg> [--ei padW 2048 --ei padH 1536 --ei padDpi 326 --ei padFit 0|1|2]`, stop with `STOP_THUNDERPAD`.
+Setting: `lmo_thunderpad_apps` = `pkg|w|h|dpi|fit;…` (fit 0 fill, 1 original, 2 stretch).
 Note: a tablet resolution costs more GPU than the phone's own; lower the width/height for heavy games.
 
 ## 7. How it works (short)

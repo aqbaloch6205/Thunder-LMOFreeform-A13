@@ -15,6 +15,8 @@ interface TaskHost {
     val handler: android.os.Handler
     fun onTaskGone(reason: String, removeTask: Boolean)
     fun onAppRequestedOrientation(landscape: Boolean)
+    /** a task of the phone's own display came to front (user went home / opened another app) */
+    fun onDefaultDisplayFront() {}
 }
 
 class FreeformTaskStackListener(
@@ -41,6 +43,8 @@ class FreeformTaskStackListener(
         if (info.displayId == displayId) {
             taskId = info.taskId
             dlog(TAG, "onTaskMovedToFront $taskId")
+        } else if (info.displayId == Display.DEFAULT_DISPLAY) {
+            window.handler.post { window.onDefaultDisplayFront() }
         }
     }
 
