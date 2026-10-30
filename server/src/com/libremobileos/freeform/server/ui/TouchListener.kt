@@ -375,9 +375,11 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
     private var startY = 0.0f
     private var isPinTriggered = false
     private var lastLive = 0L
+    private var lastW = 0
+    private var lastH = 0
 
     companion object {
-        private const val LIVE_INTERVAL_MS = 90L
+        private const val LIVE_INTERVAL_MS = 220L
         private const val PIN_THRESHOLD_DP = 160
         private const val MIN_WINDOW_SIZE_DP = 110
     }
@@ -396,6 +398,8 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                 startY = event.rawY
                 isPinTriggered = false
                 lastLive = 0L
+                lastW = rootView.layoutParams.width
+                lastH = rootView.layoutParams.height
             }
             MotionEvent.ACTION_MOVE -> {
                 val xDelta = if (isRight) (event.rawX - startX) else (startX - event.rawX)
@@ -438,8 +442,12 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
 
                 // live resize: the app re-lays out while you drag (throttled)
                 val now = android.os.SystemClock.uptimeMillis()
-                if (!isPinTriggered && now - lastLive >= LIVE_INTERVAL_MS) {
+                // only re-layout the app when the size changed enough and not too often (avoids jerks)
+                if (!isPinTriggered && now - lastLive >= LIVE_INTERVAL_MS &&
+                    (abs(targetWidth - lastW) >= dp(24) || abs(targetHeight - lastH) >= dp(24))) {
                     lastLive = now
+                    lastW = targetWidth
+                    lastH = targetHeight
                     window.applyWindowSize(targetWidth, targetHeight)
                 }
 

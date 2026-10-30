@@ -17,6 +17,8 @@ interface TaskHost {
     fun onAppRequestedOrientation(landscape: Boolean)
     /** a task of the phone's own display came to front (user went home / opened another app) */
     fun onDefaultDisplayFront() {}
+    /** any task stack change (used to re-check the foreground activity's orientation) */
+    fun onStackChanged() {}
 }
 
 class FreeformTaskStackListener(
@@ -43,6 +45,7 @@ class FreeformTaskStackListener(
         if (info.displayId == displayId) {
             taskId = info.taskId
             dlog(TAG, "onTaskMovedToFront $taskId")
+            reportOrientation(info)
         } else if (info.displayId == Display.DEFAULT_DISPLAY) {
             window.handler.post { window.onDefaultDisplayFront() }
         }
@@ -53,7 +56,17 @@ class FreeformTaskStackListener(
         if (info.displayId == displayId) {
             taskId = info.taskId
             dlog(TAG, "onTaskDescriptionChanged $info")
+            reportOrientation(info)
         }
+    }
+
+    private fun reportOrientation(info: ActivityManager.RunningTaskInfo) {
+        val o = info.topActivityInfo?.screenOrientation ?: return
+        AppProfiles.landscapeFromOrientation(o)?.let { window.onAppRequestedOrientation(it) }
+    }
+
+    override fun onTaskStackChanged() {
+        window.handler.post { window.onStackChanged() }
     }
 
     override fun onActivityRequestedOrientationChanged(taskId: Int, requestedOrientation: Int) {

@@ -136,7 +136,8 @@ Apps with a ThunderPad profile open fullscreen in pad mode when launched from th
 - **Fill** (default): fills the screen like a normal app, no bars, no distortion. The virtual display keeps the phone's aspect and uses the preset's size/dpi (at least ~600dp wide, so apps show their tablet layout).
 - **Original**: exact tablet aspect (e.g. 2048x1536) with black bars. **Stretch**: exact tablet resolution stretched over the screen.
 - Orientation follows the app (manifest / runtime request), otherwise the phone rotation. A landscape app on a portrait phone is shown rotated, so turning the phone makes it upright (⟳ flips the direction).
-- **Home / Recents / another app hides the pad** and the app keeps running in the background, like a normal app. Open it again from the sidebar to continue. The edge handle (⋮) has Back / fit mode / flip / **Close** (really closes the app). The Back key works too.
+- **Truly fullscreen**: status and navigation bars are hidden (swipe from the edge shows them), nothing is cut at the sides/cutout. Rendering uses a SurfaceView (composed directly by SurfaceFlinger, best performance); only the rotated case uses a TextureView.
+- **Home / Recents / another app hides the pad** and the app keeps running in the background, like a normal app. A small bubble (or the sidebar) brings it back exactly as it was, without restarting. Do not start the app from the home screen icon while it is hidden: Android would then move its task to the real display. The edge handle (⋮) has Back / fit mode / flip / **Close** (really closes the app). The Back key works too.
 
 Broadcast: `am broadcast -a com.libremobileos.freeform.START_THUNDERPAD --es packageName <pkg> [--ei padW 2048 --ei padH 1536 --ei padDpi 326 --ei padFit 0|1|2]`, stop with `STOP_THUNDERPAD`.
 Setting: `lmo_thunderpad_apps` = `pkg|w|h|dpi|fit;…` (fit 0 fill, 1 original, 2 stretch).

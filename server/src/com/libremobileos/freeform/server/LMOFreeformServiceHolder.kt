@@ -88,6 +88,10 @@ object LMOFreeformServiceHolder {
         service?.resizeFreeform(token, width, height, densityDpi)
     }
 
+    fun setSurface(token: Any, surface: Surface?) {
+        service?.setSurface(token, surface)
+    }
+
     fun releaseFreeform(token: Any) {
         service?.releaseFreeform(token)
     }

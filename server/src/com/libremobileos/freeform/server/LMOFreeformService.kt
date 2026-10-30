@@ -57,6 +57,12 @@ class LMOFreeformService(context: Context, private val handler: Handler) {
         dlog(TAG, "resize ${width}x$height@$densityDpi")
     }
 
+    /** swap the output surface (SurfaceView <-> TextureView, surface re-created, ...) */
+    fun setSurface(token: Any, surface: Surface?) {
+        val vd = synchronized(displays) { displays[token] } ?: return
+        runCatching { vd.surface = surface }.onFailure { Slog.e(TAG, "setSurface failed", it) }
+    }
+
     fun releaseFreeform(token: Any) {
         val vd = synchronized(displays) { displays.remove(token) } ?: return
         runCatching { vd.release() }.onFailure { Slog.e(TAG, "release failed", it) }
