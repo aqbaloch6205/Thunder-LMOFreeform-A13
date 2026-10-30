@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     private static final String KEY_HEIGHT = "lmo_freeform_height_pct";
     private static final String KEY_DPI = "lmo_freeform_dpi";
 
+    private Ui ui;
     private int bg, surface, text1, text2, accent, onAccent;
 
     private int dp(int v) {
@@ -53,23 +54,17 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        bg = attr(android.R.attr.colorBackground, Color.WHITE);
-        text1 = attr(android.R.attr.textColorPrimary, Color.BLACK);
-        text2 = attr(android.R.attr.textColorSecondary, 0xFF707070);
-        accent = attr(android.R.attr.colorAccent, 0xFF3F8CFF);
-        boolean light = Color.luminance(bg) > 0.5f;
-        surface = mix(bg, accent, light ? 0.07f : 0.14f);
-        onAccent = Color.luminance(accent) > 0.55f ? Color.BLACK : Color.WHITE;
-        Window w = getWindow();
-        w.setStatusBarColor(bg);
-        w.setNavigationBarColor(bg);
+        ui = Ui.of(this);
+        bg = ui.bg; text1 = ui.text1; text2 = ui.text2; accent = ui.accent; onAccent = ui.onAccent;
+        surface = ui.surface;
+        ui.applyBars(this);
 
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setPadding(dp(16), dp(28), dp(16), dp(32));
 
         TextView title = new TextView(this);
-        title.setText("Thunder Freeform");
+        title.setText("ThunderFreeform");
         title.setTextSize(28);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setTextColor(text1);
@@ -80,6 +75,16 @@ public class MainActivity extends Activity {
         sub.setPadding(0, dp(2), 0, dp(18));
         page.addView(sub);
 
+        // ---- Appearance
+        LinearLayout c0 = card(page, "APPEARANCE");
+        label(c0, "Theme");
+        segmented(c0, new String[] { "Auto", "Light", "Dark" }, Ui.theme(this), i -> {
+            Ui.set(this, Ui.KEY_THEME, i);
+            getWindow().getDecorView().postDelayed(this::recreate, 120);
+        });
+        label(c0, "Accent colour");
+        accentRow(c0);
+
         // ---- Sidebar
         LinearLayout c1 = card(page, "SIDEBAR");
         switchRow(c1, "Enable sidebar", "Swipe in from the screen edge to open",
@@ -87,6 +92,7 @@ public class MainActivity extends Activity {
         label(c1, "Side");
         segmented(c1, new String[] { "Left", "Right" }, Prefs.getInt(this, Prefs.SIDE, 1),
                 i -> Prefs.putInt(this, Prefs.SIDE, i));
+        actionRow(c1, "Move the handle", "Long-press the handle, then drag it anywhere; it snaps to the nearest edge", () -> {});
         slider(c1, "Handle length", Prefs.HANDLE_LEN, 40, 300, 100, " dp");
         slider(c1, "Handle width", Prefs.HANDLE_WIDTH, 3, 16, 6, " dp");
         slider(c1, "Handle opacity", Prefs.HANDLE_ALPHA, 20, 100, 70, "%");
@@ -115,6 +121,17 @@ public class MainActivity extends Activity {
                 startActivity(new Intent(this, AppPickerActivity.class)
                         .putExtra(AppPickerActivity.EXTRA_PAD, true)));
 
+        // ---- Maintenance
+        LinearLayout c4 = card(page, "MORE");
+        actionRow(c4, "Reset sidebar & windows", "Restore the default sizes and sidebar layout", this::confirmReset);
+        TextView about = new TextView(this);
+        about.setText("ThunderFreeform · based on LMOFreeform (GPL-3.0)");
+        about.setTextSize(12);
+        about.setTextColor(text2);
+        about.setGravity(Gravity.CENTER);
+        about.setPadding(0, dp(10), 0, 0);
+        page.addView(about);
+
         ScrollView sv = new ScrollView(this);
         sv.setBackgroundColor(bg);
         sv.setVerticalScrollBarEnabled(false);
@@ -123,6 +140,51 @@ public class MainActivity extends Activity {
     }
 
     // ------------------------------------------------------------- widgets
+
+    private void accentRow(LinearLayout c) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(2), 0, dp(10));
+        for (int i = 0; i < Ui.ACCENTS.length; i++) {
+            final int col = Ui.ACCENTS[i];
+            TextView dot = new TextView(this);
+            dot.setGravity(Gravity.CENTER);
+            dot.setText(col == accent ? "✓" : "");
+            dot.setTextSize(16);
+            dot.setTextColor(Color.luminance(col) > 0.5f ? Color.BLACK : Color.WHITE);
+            dot.setContentDescription(Ui.ACCENT_NAMES[i]);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(col);
+            dot.setBackground(g);
+            dot.setOnClickListener(v -> {
+                Ui.set(this, Ui.KEY_ACCENT, col);
+                getWindow().getDecorView().postDelayed(this::recreate, 120);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.rightMargin = dp(8);
+            row.addView(dot, lp);
+        }
+        c.addView(row);
+    }
+
+    private void confirmReset() {
+        new AlertDialog.Builder(this)
+                .setTitle("Reset to defaults?")
+                .setMessage("Sidebar layout and default window size go back to factory values. Per-app profiles are kept.")
+                .setPositiveButton("Reset", (d, w) -> {
+                    Intent i = new Intent(ACTION_SET_CONFIG);
+                    i.putExtra(Prefs.SIDE, 1).putExtra(Prefs.HANDLE_Y, -1)
+                            .putExtra(Prefs.HANDLE_LEN, 100).putExtra(Prefs.HANDLE_WIDTH, 6)
+                            .putExtra(Prefs.HANDLE_ALPHA, 70).putExtra(Prefs.COLUMNS, 1)
+                            .putExtra(Prefs.ICON_SIZE, 40).putExtra(Prefs.PANEL_ALPHA, 85)
+                            .putExtra(KEY_WIDTH, 90).putExtra(KEY_HEIGHT, 62).putExtra(KEY_DPI, 0);
+                    sendBroadcast(i);
+                    getWindow().getDecorView().postDelayed(this::recreate, 300);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
 
     private LinearLayout card(LinearLayout parent, String header) {
         TextView h = new TextView(this);
@@ -137,7 +199,7 @@ public class MainActivity extends Activity {
         c.setOrientation(LinearLayout.VERTICAL);
         GradientDrawable g = new GradientDrawable();
         g.setColor(surface);
-        g.setCornerRadius(dp(26));
+        g.setCornerRadius(dp(28));
         c.setBackground(g);
         c.setPadding(dp(18), dp(10), dp(18), dp(10));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(

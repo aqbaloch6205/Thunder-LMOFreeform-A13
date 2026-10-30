@@ -55,3 +55,11 @@ Controls: `settings put system freeform_control_mode Button` (ya Gesture).
 - Portrait app: `lmo_freeform_width_pct` x `lmo_freeform_height_pct`. Landscape app (PUBG etc., manifest/runtime orientation se detect): 16:9 window, portrait phone par poori width.
 - App request kare (`setRequestedOrientation`) to window live reshape hoti hai; rotation par bhi.
 - Per-app override: picker me app long-press -> orientation / width% / height% / dpi (`lmo_freeform_profiles`). 0 = auto.
+
+## What's new
+
+- **Window lock** – the padlock in the title bar freezes a floating window (no move / resize / close / maximize) so it can't be dismissed by accident.
+- **Smoother resize** – the frame follows the finger and the app is re-laid out only when you pause.
+- **ThunderPad** – system bars appear only on a deliberate edge swipe, never on taps.
+- **Sidebar** – long-press the handle and drag it anywhere; it snaps to the nearest edge. The panel opens/closes like a pill growing out of / shrinking into the handle.
+- **Appearance** – Auto / Light / Dark theme and six accent colours (`lmo_ui_theme`, `lmo_ui_accent`), used by settings, sidebar and picker.

@@ -78,6 +78,10 @@ class FreeformWindow(
     val appLabel: String get() = appPackageName
     @Volatile var isMinimized = false
         private set
+    /** locked: the window cannot be moved, resized, minimized or closed by accident */
+    @Volatile var isLocked = false
+        private set
+    private var lockView: ImageView? = null
     private var isInitialized = false
 
     private val rotationWatcher = object : IRotationWatcher.Stub() {
@@ -140,6 +144,8 @@ class FreeformWindow(
         private const val DRAWABLE_CLOSE = "ic_minimize"
         private const val DRAWABLE_OPEN_FULL_SCREEN = "ic_maximize"
         private const val DRAWABLE_PIN = "ic_pin"
+        private const val DRAWABLE_LOCK = "ic_lock"
+        private const val DRAWABLE_LOCK_OPEN = "ic_lock_open"
         const val TITLE_CLOSE = "Close"
         const val TITLE_OPEN_FULL_SCREEN = "Open full screen"
         const val TITLE_PIN = "Pin app"
@@ -376,6 +382,11 @@ class FreeformWindow(
         val gesturePillView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "gesturePill")
         val gesturePillPlateView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "gesturePillPlate")
         val arrowBackView = resourceHolder.getLayoutChildViewByTag<View>(tmpFreeformLayout, "arrowBack")
+        lockView = resourceHolder.getLayoutChildViewByTag<ImageView>(tmpFreeformLayout, "lockView")
+        lockView?.apply {
+            setImageDrawable(resourceHolder.getDrawable(DRAWABLE_LOCK_OPEN))
+            setOnClickListener { toggleLock(it) }
+        }
         val veilAppIconView = resourceHolder.getLayoutChildViewByTag<ImageView>(tmpFreeformLayout, "veilAppIcon")
         if (null == leftScaleView || null == rightScaleView || null == pinView
                 || null == appIconView || null == packageNameView || null == veilAppIconView
@@ -457,6 +468,16 @@ class FreeformWindow(
      */
     fun handleHangUp() {
         if (isMinimized) restoreFromStack() else minimize()
+    }
+
+    private fun toggleLock(v: View) {
+        isLocked = !isLocked
+        lockView?.apply {
+            setImageDrawable(resourceHolder.getDrawable(if (isLocked) DRAWABLE_LOCK else DRAWABLE_LOCK_OPEN))
+            if (isLocked) setColorFilter(0xFFFFB300.toInt()) else clearColorFilter()
+        }
+        v.performHapticFeedback(
+            if (isLocked) android.view.HapticFeedbackConstants.CONFIRM else android.view.HapticFeedbackConstants.REJECT)
     }
 
     fun minimize() {

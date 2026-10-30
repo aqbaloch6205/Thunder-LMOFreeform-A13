@@ -31,7 +31,18 @@ class SidebarConfig(private val context: Context) {
         runCatching { Settings.System.putInt(context.contentResolver, HANDLE_Y, y) }
     }
 
+    fun setSide(right: Boolean) {
+        runCatching { Settings.System.putInt(context.contentResolver, SIDE, if (right) 1 else 0) }
+    }
+
+    /** 0 auto (follow system), 1 light, 2 dark */
+    val theme get() = int(UI_THEME, 0)
+    val accent: Int get() = int(UI_ACCENT, 0xFFFFC107.toInt())
+
     val night: Boolean
+        get() = when (theme) { 1 -> false; 2 -> true; else -> systemNight }
+
+    private val systemNight: Boolean
         get() = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
 
@@ -45,6 +56,8 @@ class SidebarConfig(private val context: Context) {
         const val COLUMNS = "lmo_sb_columns"
         const val ICON_SIZE = "lmo_sb_icon_size_dp"
         const val PANEL_ALPHA = "lmo_sb_panel_alpha"
+        const val UI_THEME = "lmo_ui_theme"
+        const val UI_ACCENT = "lmo_ui_accent"
         const val PINNED = "lmo_sb_pinned"         // "pkg/activity" joined by \n
     }
 }

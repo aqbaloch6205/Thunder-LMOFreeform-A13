@@ -143,7 +143,7 @@ class SidebarController(
         val box = FrameLayout(context)
         val bar = View(context)
         bar.background = GradientDrawable().apply {
-            setColor(if (cfg.night) 0xFFE0E0E0.toInt() else 0xFF424242.toInt())
+            setColor(cfg.accent)
             cornerRadius = barW.toFloat()
         }
         bar.alpha = cfg.handleAlpha / 100f
@@ -195,7 +195,11 @@ class SidebarController(
                         val dx = e.rawX - downX
                         val dy = e.rawY - downY
                         if (dragging) {
-                            lp.y = (startY + dy.roundToInt()).coerceIn(0, max(0, screenH() - barH))
+                            // free placement: follow the finger on both axes, snap to the nearest edge on release
+                            val sw = context.resources.displayMetrics.widthPixels
+                            lp.gravity = Gravity.TOP or Gravity.START
+                            lp.x = (e.rawX - lp.width / 2f).roundToInt().coerceIn(0, max(0, sw - lp.width))
+                            lp.y = (e.rawY - barH / 2f).roundToInt().coerceIn(0, max(0, screenH() - barH))
                             runCatching { wm.updateViewLayout(box, lp) }
                         } else if (abs(dx) > slop || abs(dy) > slop) {
                             moved = true
@@ -206,7 +210,17 @@ class SidebarController(
                     }
                     MotionEvent.ACTION_UP -> {
                         handler.removeCallbacks(lpRun)
-                        if (dragging) cfg.setHandleY(lp.y)      // plain tap does nothing: swipe inward to open
+                        if (dragging) {
+                            val sw = context.resources.displayMetrics.widthPixels
+                            val toRight = lp.x + lp.width / 2 > sw / 2
+                            cfg.setHandleY(lp.y)
+                            if (toRight != cfg.right) cfg.setSide(toRight)   // observer rebuilds on the new side
+                            else {
+                                lp.gravity = Gravity.TOP or (if (toRight) Gravity.END else Gravity.START)
+                                lp.x = 0
+                                runCatching { wm.updateViewLayout(box, lp) }
+                            }
+                        }
                         dragging = false
                     }
                     MotionEvent.ACTION_CANCEL -> {
@@ -230,6 +244,7 @@ class SidebarController(
     private class Entry(val label: String, val icon: Drawable?, val glyph: String?, val action: () -> Unit)
 
     private var closing: View? = null
+    private var panelTop = 0
 
     private fun closePanelNow() {
         panel?.let { runCatching { wm.removeViewImmediate(it) } }
@@ -248,8 +263,11 @@ class SidebarController(
         panel = null
         closing = v
         val right = cfg.right
-        v.animate().translationX((if (right) 1 else -1) * (v.width + dp(10)).toFloat()).alpha(0f)
-            .setDuration(140).setInterpolator(DecelerateInterpolator())
+        // shrink back into the edge like a pill
+        v.pivotX = if (right) v.width.toFloat() else 0f
+        v.pivotY = (handleLp?.y ?: 0).toFloat() + dp(cfg.handleLenDp) / 2f - panelTop
+        v.animate().scaleX(0.15f).scaleY(0.06f).translationX((if (right) 1 else -1) * dp(24).toFloat()).alpha(0f)
+            .setDuration(170).setInterpolator(DecelerateInterpolator())
             .withEndAction { if (closing === v) { runCatching { wm.removeViewImmediate(v) }; closing = null } }
             .start()
     }
@@ -318,7 +336,7 @@ class SidebarController(
             }
             v.contentDescription = e.label
             v.background = RippleDrawable(
-                ColorStateList.valueOf(if (night) 0x44FFFFFF else 0x33000000), null,
+                ColorStateList.valueOf((cfg.accent and 0x00FFFFFF) or 0x44000000), null,
                 GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.WHITE) })
             v.setOnClickListener { closePanelNow(); e.action() }
             grid.addView(v, GridLayout.LayoutParams().apply { width = cell; height = cell })
@@ -330,8 +348,9 @@ class SidebarController(
         val alpha = (255 * cfg.panelAlpha / 100f).roundToInt()
         panelView = FrameLayout(context).apply {
             background = GradientDrawable().apply {
-                setColor((if (night) 0x00202124 else 0x00F5F5F5) or (alpha shl 24))
-                cornerRadius = dp(24).toFloat()
+                setColor((if (night) 0x00181A20 else 0x00F6F7FA) or (alpha shl 24))
+                cornerRadius = dp(28).toFloat()
+                setStroke(dp(1), (cfg.accent and 0x00FFFFFF) or 0x33000000)
             }
             elevation = dp(8).toFloat()
             clipToOutline = true
@@ -373,11 +392,13 @@ class SidebarController(
         if (runCatching { wm.addView(box, lp) }.isFailure) return
         panel = box
 
-        val from = (if (right) 1 else -1) * (w + dp(10)).toFloat()
-        box.alpha = 0f
-        box.translationX = from
-        box.animate().translationX(0f).alpha(1f).setDuration(200)
-            .setInterpolator(DecelerateInterpolator(1.6f)).start()
+        panelTop = y
+        box.scaleX = 0.15f; box.scaleY = 0.06f; box.alpha = 0f
+        box.translationX = (if (right) 1 else -1) * dp(24).toFloat()
+        box.pivotX = if (right) w.toFloat() else 0f
+        box.pivotY = (hy + dp(cfg.handleLenDp) / 2f - y).coerceIn(0f, h.toFloat())
+        box.animate().scaleX(1f).scaleY(1f).translationX(0f).alpha(1f).setDuration(230)
+            .setInterpolator(android.view.animation.OvershootInterpolator(0.8f)).start()
     }
 
     companion object {

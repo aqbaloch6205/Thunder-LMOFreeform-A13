@@ -40,6 +40,14 @@
             android:textColor="@color/color_text" />
 
         <ImageView
+            android:id="@+id/lockView"
+            android:tag="lockView"
+            android:layout_width="24dp"
+            android:layout_height="16dp"
+            android:layout_marginEnd="6dp"
+            android:src="@drawable/ic_lock_open" />
+
+        <ImageView
             android:id="@+id/pinView"
             android:tag="pinView"
             android:layout_width="24dp"

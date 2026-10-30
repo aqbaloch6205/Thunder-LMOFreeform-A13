@@ -21,6 +21,7 @@ final class Prefs {
     static final String COLUMNS = "lmo_sb_columns";
     static final String ICON_SIZE = "lmo_sb_icon_size_dp";
     static final String PANEL_ALPHA = "lmo_sb_panel_alpha";
+    static final String HANDLE_Y = "lmo_sb_handle_y";
     static final String PINNED = "lmo_sb_pinned";             // "pkg/activity" joined by '\n'
     static final String PADS = "lmo_thunderpad_apps";         // pkg|w|h|dpi|fit;...
     static final String PROFILES = "lmo_freeform_profiles";   // pkg|orient|w%|h%|dpi;...

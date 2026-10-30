@@ -56,6 +56,7 @@ public class AppPickerActivity extends Activity {
     private BaseAdapter adapter;
     private boolean pinMode;
     private boolean padMode;
+    private Ui ui;
 
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
@@ -71,10 +72,15 @@ public class AppPickerActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(12), dp(24), dp(12), 0);
+        ui = Ui.of(this);
+        root.setBackgroundColor(ui.bg);
+        ui.applyBars(this);
 
         TextView title = new TextView(this);
-        title.setTextSize(18);
-        title.setText(padMode ? "ThunderPad: choose an app (iPad view)"
+        title.setTextSize(20);
+        title.setTextColor(ui.text1);
+        title.setPadding(dp(4), 0, 0, dp(8));
+        title.setText(padMode ? "ThunderPad · choose an app"
                 : pinMode ? "Choose sidebar apps" : "Open in floating window");
         root.addView(title);
 
@@ -84,6 +90,10 @@ public class AppPickerActivity extends Activity {
         EditText search = new EditText(this);
         search.setHint("Search apps");
         search.setSingleLine(true);
+        search.setTextColor(ui.text1);
+        search.setHintTextColor(ui.text2);
+        search.setPadding(dp(18), dp(12), dp(18), dp(12));
+        search.setBackground(Ui.round(ui.surface, dp(26)));
         top.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         if (pinMode) {
             Button done = new Button(this);
@@ -345,7 +355,8 @@ public class AppPickerActivity extends Activity {
             ((ImageView) holder[0]).setImageDrawable(it.icon);
             ((TextView) holder[1]).setText(it.label);
             boolean mark = (pinMode && selected.contains(it.key)) || (padMode && Prefs.pad(AppPickerActivity.this, it.pkg) != null);
-            cell.setBackgroundColor(mark ? 0x553F8CFF : 0);
+            cell.setBackground(mark ? Ui.round((ui.accent & 0x00FFFFFF) | 0x55000000, dp(16)) : null);
+            ((TextView) holder[1]).setTextColor(ui.text1);
             return cell;
         }
     }

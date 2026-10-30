@@ -25,6 +25,7 @@ class MoveTouchListener(
     private var startY = 0.0f
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
+        if (window.isLocked) return true
         val layout = window.freeformWindowView ?: window.freeformLayout ?: return true
         
         when (event.action) {
@@ -50,6 +51,7 @@ class MoveTouchListener(
 
 class LeftViewClickListener(private val window: FreeformWindow) : View.OnClickListener {
     override fun onClick(v: View) {
+        if (window.isLocked) return
         window.close()
     }
 }
@@ -59,6 +61,7 @@ class LeftViewClickListener(private val window: FreeformWindow) : View.OnClickLi
  */
 class MaximizeClickListener(private val window: FreeformWindow): View.OnClickListener {
     override fun onClick(v: View) {
+        if (window.isLocked) return
         window.enterFullscreen()
     }
 }
@@ -129,6 +132,7 @@ class PillGestureController(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
+        if (window.isLocked) return true
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 startX = event.rawX
@@ -357,6 +361,7 @@ class PillGestureController(
  */
 class PinClickListener(private val window: FreeformWindow): View.OnClickListener {
     override fun onClick(v: View) {
+        if (window.isLocked) return
         window.handler.post {
             // hangup
             window.handleHangUp()
@@ -375,11 +380,15 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
     private var startY = 0.0f
     private var isPinTriggered = false
     private var lastLive = 0L
-    private var lastW = 0
-    private var lastH = 0
+    private var pendW = 0
+    private var pendH = 0
+    private val applyPending = Runnable {
+        if (pendW > 0 && pendH > 0) window.applyWindowSize(pendW, pendH)
+    }
 
     companion object {
-        private const val LIVE_INTERVAL_MS = 220L
+        private const val DEBOUNCE_MS = 110L
+        private const val FLUSH_MS = 700L
         private const val PIN_THRESHOLD_DP = 160
         private const val MIN_WINDOW_SIZE_DP = 110
     }
@@ -389,6 +398,7 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
+        if (window.isLocked) return true
         val rootView = window.freeformRootView ?: return true
         val freeformView = window.freeformView ?: return true
         
@@ -397,9 +407,9 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                 startX = event.rawX
                 startY = event.rawY
                 isPinTriggered = false
-                lastLive = 0L
-                lastW = rootView.layoutParams.width
-                lastH = rootView.layoutParams.height
+                lastLive = android.os.SystemClock.uptimeMillis()
+                pendW = 0
+                pendH = 0
             }
             MotionEvent.ACTION_MOVE -> {
                 val xDelta = if (isRight) (event.rawX - startX) else (startX - event.rawX)
@@ -440,15 +450,19 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                     }
                 }
 
-                // live resize: the app re-lays out while you drag (throttled)
-                val now = android.os.SystemClock.uptimeMillis()
-                // only re-layout the app when the size changed enough and not too often (avoids jerks)
-                if (!isPinTriggered && now - lastLive >= LIVE_INTERVAL_MS &&
-                    (abs(targetWidth - lastW) >= dp(24) || abs(targetHeight - lastH) >= dp(24))) {
-                    lastLive = now
-                    lastW = targetWidth
-                    lastH = targetHeight
-                    window.applyWindowSize(targetWidth, targetHeight)
+                // smooth drag: only the window frame follows the finger; the app is re-laid out when the
+                // finger pauses (debounce) or every ~700 ms while dragging, never on every event
+                if (!isPinTriggered) {
+                    pendW = targetWidth
+                    pendH = targetHeight
+                    val now = android.os.SystemClock.uptimeMillis()
+                    window.handler.removeCallbacks(applyPending)
+                    if (now - lastLive >= FLUSH_MS) {
+                        lastLive = now
+                        applyPending.run()
+                    } else {
+                        window.handler.postDelayed(applyPending, DEBOUNCE_MS)
+                    }
                 }
 
                 startX = event.rawX
@@ -462,6 +476,7 @@ class ScaleTouchListener(private val window: FreeformWindow, private val isRight
                     return true
                 }
 
+                window.handler.removeCallbacks(applyPending)
                 window.applyWindowSize(rootView.layoutParams.width, rootView.layoutParams.height)
                 window.handler.post { window.makeSureFreeformInScreen() }
             }

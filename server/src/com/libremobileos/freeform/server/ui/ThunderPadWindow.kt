@@ -75,6 +75,8 @@ class ThunderPadWindow(
     private var rotationDeg = 90f
     private var hidden = false
     private var downNearBottom = false
+    private var touchMoved = false
+    private val rehide = Runnable { root?.let { hideSystemBars(it) } }
     private var lastW = 0
     private var lastH = 0
     @Volatile var isDestroyed = false
@@ -166,6 +168,14 @@ class ThunderPadWindow(
                 }
             }
             root = r
+            // system bars must only appear on a deliberate edge swipe, not after a tap / game touch
+            r.setOnApplyWindowInsetsListener { v, insets ->
+                if (insets.isVisible(WindowInsets.Type.systemBars()) && !hidden) {
+                    handler.removeCallbacks(rehide)
+                    handler.postDelayed(rehide, if (touchMoved) 2200L else 150L)
+                }
+                v.onApplyWindowInsets(insets)
+            }
             attachContent()
 
             val lp = WindowManager.LayoutParams(
@@ -349,9 +359,13 @@ class ThunderPadWindow(
     private fun forwardTouch(v: View, ev: MotionEvent): Boolean {
         // swipe up from the bottom edge (gesture navigation: home / recents) -> hide like a normal app goes away
         when (ev.actionMasked) {
-            MotionEvent.ACTION_DOWN -> downNearBottom = ev.rawY > real().y - dp(40)
+            MotionEvent.ACTION_DOWN -> { downNearBottom = ev.rawY > real().y - dp(40); touchMoved = false }
+            MotionEvent.ACTION_MOVE -> touchMoved = true
             MotionEvent.ACTION_CANCEL -> if (downNearBottom) { downNearBottom = false; handler.post { hide() } }
-            MotionEvent.ACTION_UP -> downNearBottom = false
+            MotionEvent.ACTION_UP -> {
+                downNearBottom = false
+                if (!touchMoved) handler.post { root?.let { hideSystemBars(it) } }   // a tap never keeps the bars
+            }
         }
         if (displayId < 0 || v.width == 0 || v.height == 0) return true
         val e = MotionEvent.obtain(ev)
